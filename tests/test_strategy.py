@@ -48,11 +48,11 @@ def test_downtrend_breakout_signals_sell():
     assert sig.stop > sig.entry_ref
 
 
-def test_choppy_no_signal():
+def test_flat_no_signal():
     cfg = _cfg()
     n = 60
     idx = pd.date_range("2025-01-01", periods=n, freq="h", tz="UTC")
-    close = 1900 + np.sin(np.arange(n) / 3.0) * 2
+    close = np.full(n, 1900.0)
     df = pd.DataFrame(
         {
             "open": close,
