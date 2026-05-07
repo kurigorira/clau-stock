@@ -1,0 +1,26 @@
+symbol: XAUUSD
+timeframe: H1
+
+trend:
+  ema_length: 200
+
+breakout:
+  donchian_length: 20
+  exit_donchian_length: 10
+
+risk:
+  per_trade_pct: 0.5         # %% of equity risked per trade
+  atr_length: 14
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+session:
+  start_utc: "07:00"
+  end_utc: "20:00"
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260507
+  deviation_points: 20
+  poll_seconds: 30
+  comment: "gold_breakout"
