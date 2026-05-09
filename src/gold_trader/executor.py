@@ -34,6 +34,8 @@ class Executor:
             self.cfg.trend.ema_length,
             self.cfg.breakout.donchian_length,
             self.cfg.risk.atr_length,
+            self.cfg.filters.adx_length * 2,
+            self.cfg.trend.ema_slope_lookback,
         )
         return mt5_client.fetch_ohlcv(self.cfg.symbol, self.cfg.timeframe, warmup * 4)
 
@@ -75,8 +77,28 @@ class Executor:
         if signal.side is None or len(positions) >= self.cfg.risk.max_positions:
             return
 
-        meta = mt5_client.symbol_meta(self.cfg.symbol)
         equity = mt5_client.account_equity()
+
+        # Daily guard: skip entries after today's loss streak / cumulative loss
+        # crosses configured limits. Resets at UTC midnight.
+        realized_pnl, loss_streak = mt5_client.today_closed_pnl(
+            self.cfg.symbol, self.cfg.execution.magic_number
+        )
+        guard = self.cfg.daily_guard
+        if loss_streak >= guard.max_consecutive_losses:
+            self.log.info(
+                f"daily-guard: {loss_streak} consecutive losses today, skipping entry"
+            )
+            return
+        loss_cap = equity * guard.max_loss_pct / 100.0
+        if realized_pnl <= -loss_cap:
+            self.log.info(
+                f"daily-guard: realized loss {realized_pnl:.2f} >= "
+                f"{guard.max_loss_pct:.2f}% of equity ({loss_cap:.2f}), skipping entry"
+            )
+            return
+
+        meta = mt5_client.symbol_meta(self.cfg.symbol)
         stop_distance = abs(signal.entry_ref - signal.stop)
         volume = position_volume(
             equity=equity,

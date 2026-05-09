@@ -32,8 +32,13 @@ def _trend_then_reverse() -> pd.DataFrame:
 def test_backtest_runs_and_returns_summary():
     cfg = Config()
     cfg.trend.ema_length = 20
+    cfg.trend.ema_slope_lookback = 5
     cfg.breakout.donchian_length = 10
     cfg.breakout.exit_donchian_length = 5
+    cfg.breakout.atr_buffer_mult = 0.0
+    cfg.filters.adx_min = 0.0
+    cfg.filters.atr_pct_min = 0.0
+    cfg.filters.atr_pct_max = 1.0
     result = run_backtest(_trend_then_reverse(), cfg)
     assert "n" in result
     assert result["n"] >= 1

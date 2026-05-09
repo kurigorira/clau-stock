@@ -3,16 +3,28 @@ timeframe: H1
 
 trend:
   ema_length: 200
+  ema_slope_lookback: 10        # bars compared against current EMA for slope sign
 
 breakout:
   donchian_length: 20
   exit_donchian_length: 10
+  atr_buffer_mult: 0.1          # close must clear donchian by this * ATR to enter
 
 risk:
-  per_trade_pct: 0.5         # %% of equity risked per trade
+  per_trade_pct: 0.5            # %% of equity risked per trade
   atr_length: 14
   atr_stop_mult: 2.0
   max_positions: 1
+
+filters:
+  adx_length: 14
+  adx_min: 25.0                 # minimum ADX for a trending regime
+  atr_pct_min: 0.006            # 0.6%% — skip dead-flat sessions
+  atr_pct_max: 0.025            # 2.5%% — skip extreme-vol blowoffs
+
+daily_guard:
+  max_consecutive_losses: 2     # block entries after N losing closes today
+  max_loss_pct: 1.0             # block entries when realized loss today >= this %% of equity
 
 session:
   # BTC trades 24/7; keep the keys present so the session filter is a no-op.

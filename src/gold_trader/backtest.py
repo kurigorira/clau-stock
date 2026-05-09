@@ -27,12 +27,21 @@ def run_backtest(
     *,
     slippage_price: float = 0.0,
 ) -> dict:
+    """Bar-by-bar backtest. Mirrors strategy.evaluate_last_bar entry filters.
+
+    Daily-guard limits (consecutive losses, daily loss cap) are NOT applied
+    here — they're enforced live by the executor against the broker account.
+    """
     data = add_indicators(df, cfg)
     trades: List[Trade] = []
     side: str | None = None
     entry_price = 0.0
     entry_time: pd.Timestamp | None = None
     stop = 0.0
+
+    f = cfg.filters
+    buffer_mult = cfg.breakout.atr_buffer_mult
+    stop_mult = cfg.risk.atr_stop_mult
 
     for i in range(1, len(data)):
         bar = data.iloc[i]
@@ -70,21 +79,31 @@ def run_backtest(
         if side is None:
             close = float(bar["close"])
             ema = float(bar["ema_trend"])
+            ema_slope = float(bar["ema_slope"])
             atr = float(bar["atr"])
+            atr_pct = float(bar["atr_pct"])
+            adx = float(bar["adx"])
             hi = float(bar["donch_high"])
             lo = float(bar["donch_low"])
-            if np.isnan(atr) or np.isnan(hi) or np.isnan(lo) or np.isnan(ema):
+            if any(
+                np.isnan(x) for x in (atr, atr_pct, adx, ema, ema_slope, hi, lo)
+            ):
                 continue
-            if close > hi and close > ema:
+            if not (f.atr_pct_min <= atr_pct <= f.atr_pct_max):
+                continue
+            if adx < f.adx_min:
+                continue
+            buffer = buffer_mult * atr
+            if close > hi + buffer and close > ema and ema_slope > 0:
                 side = "buy"
                 entry_price = close + slippage_price
                 entry_time = bar.name
-                stop = close - cfg.risk.atr_stop_mult * atr
-            elif close < lo and close < ema:
+                stop = close - stop_mult * atr
+            elif close < lo - buffer and close < ema and ema_slope < 0:
                 side = "sell"
                 entry_price = close - slippage_price
                 entry_time = bar.name
-                stop = close + cfg.risk.atr_stop_mult * atr
+                stop = close + stop_mult * atr
 
     return _summary(trades)
 

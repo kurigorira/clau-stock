@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Iterator, Optional, Tuple
 
 import pandas as pd
 
@@ -105,6 +106,48 @@ def open_positions(symbol: str, magic: int) -> list:
     mt5 = _mt5()
     positions = mt5.positions_get(symbol=symbol) or []
     return [p for p in positions if p.magic == magic]
+
+
+def today_closed_pnl(symbol: str, magic: int) -> Tuple[float, int]:
+    """Return (realized_pnl_today, trailing_loss_streak) for our magic+symbol.
+
+    "Today" is bounded by UTC 00:00 of the current day. Each closing deal's
+    profit, commission and swap are summed. The streak counts consecutive
+    losing closing deals starting from the most recent one.
+    """
+    mt5 = _mt5()
+    now = datetime.now(timezone.utc)
+    # MT5's history_deals_get treats the date args as broker-local time; we
+    # query a generous window and filter against UTC midnight ourselves using
+    # the deal's unix timestamp.
+    deals = mt5.history_deals_get(now - timedelta(days=2), now + timedelta(hours=1))
+    if deals is None:
+        return 0.0, 0
+    today_start_unix = int(
+        now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    )
+    ours = [
+        d
+        for d in deals
+        if d.magic == magic
+        and d.symbol == symbol
+        and d.entry == mt5.DEAL_ENTRY_OUT
+        and d.time >= today_start_unix
+    ]
+    if not ours:
+        return 0.0, 0
+    ours.sort(key=lambda d: d.time)
+    pnl_total = sum(
+        float(d.profit) + float(d.commission) + float(d.swap) for d in ours
+    )
+    streak = 0
+    for d in reversed(ours):
+        net = float(d.profit) + float(d.commission) + float(d.swap)
+        if net < 0:
+            streak += 1
+        else:
+            break
+    return pnl_total, streak
 
 
 def market_order(

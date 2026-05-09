@@ -35,10 +35,47 @@ def _atr(df: pd.DataFrame, length: int) -> pd.Series:
     return tr.ewm(alpha=1 / length, adjust=False).mean()
 
 
+def _adx(df: pd.DataFrame, length: int) -> pd.Series:
+    """Wilder's ADX, smoothed via EMA(alpha=1/length)."""
+    high, low, close = df["high"], df["low"], df["close"]
+    prev_close = close.shift(1)
+    prev_high = high.shift(1)
+    prev_low = low.shift(1)
+
+    tr = pd.concat(
+        [
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    up_move = high - prev_high
+    down_move = prev_low - low
+    plus_dm = pd.Series(
+        np.where((up_move > down_move) & (up_move > 0), up_move, 0.0),
+        index=df.index,
+    )
+    minus_dm = pd.Series(
+        np.where((down_move > up_move) & (down_move > 0), down_move, 0.0),
+        index=df.index,
+    )
+    atr = tr.ewm(alpha=1 / length, adjust=False).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=1 / length, adjust=False).mean() / atr
+    minus_di = 100 * minus_dm.ewm(alpha=1 / length, adjust=False).mean() / atr
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    return dx.ewm(alpha=1 / length, adjust=False).mean()
+
+
 def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     out = df.copy()
     out["ema_trend"] = _ema(out["close"], cfg.trend.ema_length)
+    out["ema_slope"] = (
+        out["ema_trend"] - out["ema_trend"].shift(cfg.trend.ema_slope_lookback)
+    )
     out["atr"] = _atr(out, cfg.risk.atr_length)
+    out["atr_pct"] = out["atr"] / out["close"]
+    out["adx"] = _adx(out, cfg.filters.adx_length)
     n = cfg.breakout.donchian_length
     m = cfg.breakout.exit_donchian_length
     # shift(1) so the channel reflects bars *prior* to the current one
@@ -50,25 +87,55 @@ def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
 
 
 def evaluate_last_bar(df: pd.DataFrame, cfg: Config) -> Signal:
-    """Return entry signal computed on the most recent *closed* bar."""
-    if len(df) < max(cfg.trend.ema_length, cfg.breakout.donchian_length) + 2:
+    """Return entry signal computed on the most recent *closed* bar.
+
+    Conditions (long; short is symmetric):
+      1. close > Donchian-high(N).shift(1) + ATR * atr_buffer_mult
+      2. close > EMA(trend)
+      3. EMA(trend) now > EMA(trend) ema_slope_lookback bars ago
+      4. ADX(adx_length) >= adx_min
+      5. atr_pct_min <= ATR / close <= atr_pct_max
+    Daily-loss / consecutive-loss filters are enforced at the executor layer
+    because they need account history.
+    """
+    warmup = max(
+        cfg.trend.ema_length,
+        cfg.breakout.donchian_length,
+        cfg.filters.adx_length * 2,
+        cfg.trend.ema_slope_lookback + 1,
+    )
+    if len(df) < warmup + 2:
         return Signal(None, 0.0, 0.0, 0.0)
 
     bar = df.iloc[-1]
     close = float(bar["close"])
     ema = float(bar["ema_trend"])
+    ema_slope = float(bar["ema_slope"])
     atr = float(bar["atr"])
+    atr_pct = float(bar["atr_pct"])
+    adx = float(bar["adx"])
     high_ref = float(bar["donch_high"])
     low_ref = float(bar["donch_low"])
 
-    if np.isnan(atr) or np.isnan(high_ref) or np.isnan(low_ref) or np.isnan(ema):
+    if any(
+        np.isnan(x)
+        for x in (atr, atr_pct, adx, ema, ema_slope, high_ref, low_ref)
+    ):
         safe_atr = 0.0 if np.isnan(atr) else atr
         return Signal(None, 0.0, close, safe_atr)
 
+    f = cfg.filters
+    if not (f.atr_pct_min <= atr_pct <= f.atr_pct_max):
+        return Signal(None, 0.0, close, atr)
+    if adx < f.adx_min:
+        return Signal(None, 0.0, close, atr)
+
+    buffer = cfg.breakout.atr_buffer_mult * atr
     stop_dist = cfg.risk.atr_stop_mult * atr
-    if close > high_ref and close > ema:
+
+    if close > high_ref + buffer and close > ema and ema_slope > 0:
         return Signal("buy", stop=close - stop_dist, entry_ref=close, atr=atr)
-    if close < low_ref and close < ema:
+    if close < low_ref - buffer and close < ema and ema_slope < 0:
         return Signal("sell", stop=close + stop_dist, entry_ref=close, atr=atr)
     return Signal(None, 0.0, close, atr)
 

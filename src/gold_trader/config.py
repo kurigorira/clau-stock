@@ -14,12 +14,14 @@ _TIMEFRAME_NAMES = ("M1", "M5", "M15", "M30", "H1", "H4", "D1")
 @dataclass
 class TrendConfig:
     ema_length: int = 200
+    ema_slope_lookback: int = 10
 
 
 @dataclass
 class BreakoutConfig:
     donchian_length: int = 20
     exit_donchian_length: int = 10
+    atr_buffer_mult: float = 0.1
 
 
 @dataclass
@@ -28,6 +30,20 @@ class RiskConfig:
     atr_length: int = 14
     atr_stop_mult: float = 2.0
     max_positions: int = 1
+
+
+@dataclass
+class FilterConfig:
+    adx_length: int = 14
+    adx_min: float = 25.0
+    atr_pct_min: float = 0.006
+    atr_pct_max: float = 0.025
+
+
+@dataclass
+class DailyGuardConfig:
+    max_consecutive_losses: int = 2
+    max_loss_pct: float = 1.0
 
 
 @dataclass
@@ -54,6 +70,8 @@ class Config:
     trend: TrendConfig = field(default_factory=TrendConfig)
     breakout: BreakoutConfig = field(default_factory=BreakoutConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
+    filters: FilterConfig = field(default_factory=FilterConfig)
+    daily_guard: DailyGuardConfig = field(default_factory=DailyGuardConfig)
     session: SessionConfig = field(default_factory=SessionConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
 
@@ -72,6 +90,8 @@ class Config:
             trend=TrendConfig(**(raw.get("trend") or {})),
             breakout=BreakoutConfig(**(raw.get("breakout") or {})),
             risk=RiskConfig(**(raw.get("risk") or {})),
+            filters=FilterConfig(**(raw.get("filters") or {})),
+            daily_guard=DailyGuardConfig(**(raw.get("daily_guard") or {})),
             session=_parse_session(raw.get("session") or {}),
             execution=ExecutionConfig(**(raw.get("execution") or {})),
         )
