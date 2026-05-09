@@ -7,7 +7,7 @@ import pandas as pd
 
 def load_csv(path: str | Path) -> pd.DataFrame:
     """Load OHLCV CSV with a UTC `time` column and open/high/low/close/volume."""
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, encoding="utf-8")
     df["time"] = pd.to_datetime(df["time"], utc=True)
     df = df.set_index("time").sort_index()
     expected = {"open", "high", "low", "close", "volume"}

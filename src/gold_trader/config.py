@@ -83,7 +83,8 @@ class Config:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
-        raw = yaml.safe_load(Path(path).read_text())
+        # explicit utf-8 so Japanese-locale Windows (cp932 default) reads it
+        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
         return cls(
             symbol=raw.get("symbol", "BTCUSD"),
             timeframe=raw.get("timeframe", "H1"),
