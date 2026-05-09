@@ -1,4 +1,4 @@
-symbol: XAUUSD
+symbol: BTCUSD
 timeframe: H1
 
 trend:
@@ -15,12 +15,13 @@ risk:
   max_positions: 1
 
 session:
-  start_utc: "07:00"
-  end_utc: "20:00"
-  trade_days: [Mon, Tue, Wed, Thu, Fri]
+  # BTC trades 24/7; keep the keys present so the session filter is a no-op.
+  start_utc: "00:00"
+  end_utc: "23:59"
+  trade_days: [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
 
 execution:
-  magic_number: 20260507
+  magic_number: 20260509
   deviation_points: 20
   poll_seconds: 30
-  comment: "gold_breakout"
+  comment: "btc_breakout"

@@ -32,24 +32,24 @@ class RiskConfig:
 
 @dataclass
 class SessionConfig:
-    start_utc: time = time(7, 0)
-    end_utc: time = time(20, 0)
+    start_utc: time = time(0, 0)
+    end_utc: time = time(23, 59)
     trade_days: List[str] = field(
-        default_factory=lambda: ["Mon", "Tue", "Wed", "Thu", "Fri"]
+        default_factory=lambda: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     )
 
 
 @dataclass
 class ExecutionConfig:
-    magic_number: int = 20260507
+    magic_number: int = 20260509
     deviation_points: int = 20
     poll_seconds: int = 30
-    comment: str = "gold_breakout"
+    comment: str = "btc_breakout"
 
 
 @dataclass
 class Config:
-    symbol: str = "XAUUSD"
+    symbol: str = "BTCUSD"
     timeframe: str = "H1"
     trend: TrendConfig = field(default_factory=TrendConfig)
     breakout: BreakoutConfig = field(default_factory=BreakoutConfig)
@@ -67,7 +67,7 @@ class Config:
     def from_yaml(cls, path: str | Path) -> "Config":
         raw = yaml.safe_load(Path(path).read_text())
         return cls(
-            symbol=raw.get("symbol", "XAUUSD"),
+            symbol=raw.get("symbol", "BTCUSD"),
             timeframe=raw.get("timeframe", "H1"),
             trend=TrendConfig(**(raw.get("trend") or {})),
             breakout=BreakoutConfig(**(raw.get("breakout") or {})),
@@ -83,7 +83,9 @@ def _parse_session(raw: dict) -> SessionConfig:
         return time(int(h), int(m))
 
     return SessionConfig(
-        start_utc=_t(raw.get("start_utc", "07:00")),
-        end_utc=_t(raw.get("end_utc", "20:00")),
-        trade_days=raw.get("trade_days", ["Mon", "Tue", "Wed", "Thu", "Fri"]),
+        start_utc=_t(raw.get("start_utc", "00:00")),
+        end_utc=_t(raw.get("end_utc", "23:59")),
+        trade_days=raw.get(
+            "trade_days", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        ),
     )

@@ -1,7 +1,7 @@
 """Backtest the strategy on a CSV of OHLCV bars.
 
 Usage:
-    python scripts/run_backtest.py config/example.yaml data/xauusd_h1.csv
+    python scripts/run_backtest.py config/example.yaml data/btcusd_h1.csv
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def main() -> None:
     print(f"trades:        {result['n']}")
     print(f"win rate:      {result['win_rate']:.2%}")
     print(f"total pnl:     {result['total_pnl_price']:.2f}  (price units)")
-    if result["n"]:
+    if result['n']:
         print(f"avg win:       {result['avg_win']:.2f}")
         print(f"avg loss:      {result['avg_loss']:.2f}")
         print(f"max drawdown:  {result['max_drawdown_price']:.2f}")
