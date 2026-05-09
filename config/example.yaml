@@ -18,8 +18,8 @@ risk:
 
 filters:
   adx_length: 14
-  adx_min: 25.0                 # minimum ADX for a trending regime
-  atr_pct_min: 0.006            # 0.6%% — skip dead-flat sessions
+  adx_min: 20.0                 # minimum ADX for a trending regime
+  atr_pct_min: 0.004            # 0.4%% — skip dead-flat sessions
   atr_pct_max: 0.025            # 2.5%% — skip extreme-vol blowoffs
 
 daily_guard:

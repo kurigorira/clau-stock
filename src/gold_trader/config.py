@@ -35,8 +35,8 @@ class RiskConfig:
 @dataclass
 class FilterConfig:
     adx_length: int = 14
-    adx_min: float = 25.0
-    atr_pct_min: float = 0.006
+    adx_min: float = 20.0
+    atr_pct_min: float = 0.004
     atr_pct_max: float = 0.025
 
 

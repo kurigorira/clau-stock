@@ -13,8 +13,8 @@ Donchian-channel breakout with multi-layer regime / strength / risk filters.
 1. `close > Donchian_high(20).shift(1) + ATR(14) * 0.1`  — breakout with ATR buffer
 2. `close > EMA(200)`                                     — trend filter
 3. `EMA(200)_now > EMA(200) 10 bars ago`                  — trend slope is up
-4. `ADX(14) >= 25`                                        — trending regime
-5. `0.6%% <= ATR(14) / close <= 2.5%%`                      — volatility regime
+4. `ADX(14) >= 20`                                        — trending regime
+5. `0.4%% <= ATR(14) / close <= 2.5%%`                      — volatility regime
 6. ≤ 1 consecutive loss today                              — block on the 2nd consecutive loss
 7. Today's realized loss `< 1%% of equity`                 — daily loss cap
 
