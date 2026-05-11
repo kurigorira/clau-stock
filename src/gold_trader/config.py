@@ -21,7 +21,7 @@ class TrendConfig:
 class BreakoutConfig:
     donchian_length: int = 20
     exit_donchian_length: int = 10
-    atr_buffer_mult: float = 0.1
+    atr_buffer_mult: float = 0.05
 
 
 @dataclass
@@ -35,8 +35,8 @@ class RiskConfig:
 @dataclass
 class FilterConfig:
     adx_length: int = 14
-    adx_min: float = 20.0
-    atr_pct_min: float = 0.004
+    adx_min: float = 18.0
+    atr_pct_min: float = 0.003
     atr_pct_max: float = 0.025
 
 
