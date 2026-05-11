@@ -1,8 +1,8 @@
 @echo off
-REM One-click launcher for the BTC + EURUSD trading bots.
+REM One-click launcher for all configured trading bots.
 REM 1. Launches MT5 terminal if it's not already running.
 REM 2. Activates the venv.
-REM 3. Runs the live trader against both configs in a single process.
+REM 3. Runs the live trader against every config in a single process.
 
 cd /d "%~dp0"
 
@@ -12,7 +12,6 @@ if not errorlevel 1 goto :mt5_running
 
 echo [start.bat] MT5 terminal not running. Locating terminal64.exe...
 
-REM Try MT5_PATH from .env first.
 if exist ".env" (
     for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
         if /I "%%a"=="MT5_PATH" set "MT5_PATH_FROM_ENV=%%~b"
@@ -59,11 +58,23 @@ if not exist ".venv\Scripts\activate.bat" (
 
 call .venv\Scripts\activate.bat
 
-REM ====== 3. Run the bots (BTCUSD + EURUSD, single process) ======
-title clau-stock live (BTCUSD + EURUSD)
-echo [start.bat] launching bots for BTCUSD and EURUSD. Press Ctrl+C to stop.
+REM ====== 3. Run the bots (all symbols, single process) ======
+title clau-stock live (multi-asset)
+echo [start.bat] launching bots for all configured symbols. Press Ctrl+C to stop.
 echo.
-python scripts\run_live.py config\example.yaml config\eurusd.yaml
+python scripts\run_live.py ^
+    config\example.yaml ^
+    config\eurusd.yaml ^
+    config\usdjpy.yaml ^
+    config\nvidia.yaml ^
+    config\nvidia_24h.yaml ^
+    config\jpn225ft.yaml ^
+    config\hk50.yaml ^
+    config\sp500ft.yaml ^
+    config\xauusd.yaml ^
+    config\xagusd.yaml ^
+    config\copper.yaml ^
+    config\cloil.yaml
 
 echo.
 echo [start.bat] bot exited. Window stays open so you can read any error above.
