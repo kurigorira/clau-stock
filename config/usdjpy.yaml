@@ -2,6 +2,10 @@
 symbol: USDJPY
 timeframe: H1
 
+filters:
+  # FX ATR/close is typically 0.01-0.03% on H1; default 0.1% floor blocks too much.
+  atr_pct_min: 0.0001
+
 session:
   trade_days: [Mon, Tue, Wed, Thu, Fri]
 
