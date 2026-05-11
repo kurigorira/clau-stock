@@ -1,8 +1,8 @@
 @echo off
-REM One-click launcher for the BTC trading bot.
+REM One-click launcher for the BTC + EURUSD trading bots.
 REM 1. Launches MT5 terminal if it's not already running.
 REM 2. Activates the venv.
-REM 3. Runs the live trader.
+REM 3. Runs the live trader against both configs in a single process.
 
 cd /d "%~dp0"
 
@@ -59,11 +59,11 @@ if not exist ".venv\Scripts\activate.bat" (
 
 call .venv\Scripts\activate.bat
 
-REM ====== 3. Run the bot ======
-title clau-stock live (BTCUSD)
-echo [start.bat] launching bot. Press Ctrl+C to stop.
+REM ====== 3. Run the bots (BTCUSD + EURUSD, single process) ======
+title clau-stock live (BTCUSD + EURUSD)
+echo [start.bat] launching bots for BTCUSD and EURUSD. Press Ctrl+C to stop.
 echo.
-python scripts\run_live.py config\example.yaml
+python scripts\run_live.py config\example.yaml config\eurusd.yaml
 
 echo.
 echo [start.bat] bot exited. Window stays open so you can read any error above.

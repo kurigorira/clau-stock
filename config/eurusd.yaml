@@ -1,0 +1,39 @@
+symbol: EURUSD
+timeframe: H1
+
+trend:
+  ema_length: 200
+  ema_slope_lookback: 10
+
+breakout:
+  donchian_length: 20
+  exit_donchian_length: 10
+  atr_buffer_mult: 0.0          # 0 = pure breakout
+
+risk:
+  per_trade_pct: 0.5            # %% of equity risked per trade
+  atr_length: 14
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  adx_length: 14
+  adx_min: 15.0                 # FX trends are slower than crypto, so lower than BTC
+  atr_pct_min: 0.0001           # 0.01%%: most active FX hours pass
+  atr_pct_max: 0.005            # 0.5%%: only news-spike bars rejected
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 1.0
+
+session:
+  # FX trades 24/5; weekends excluded via trade_days.
+  start_utc: "00:00"
+  end_utc: "23:59"
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260511        # MUST differ from BTC bot so positions stay separate
+  deviation_points: 10          # FX has tight spreads, smaller slippage tolerance
+  poll_seconds: 30
+  comment: "eurusd_breakout"
