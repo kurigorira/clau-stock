@@ -111,8 +111,21 @@ class Executor:
             volume_step=meta["volume_step"],
         )
         if volume <= 0:
+            risk_amount = equity * self.cfg.risk.per_trade_pct / 100.0
+            money_per_lot = (
+                (stop_distance / meta["trade_tick_size"]) * meta["trade_tick_value"]
+                if meta["trade_tick_size"] > 0
+                else 0.0
+            )
+            raw = risk_amount / money_per_lot if money_per_lot > 0 else 0.0
             self.log.warning(
-                "volume computed as 0 — risk too small for current stop distance"
+                f"volume=0 (below volume_min): equity={equity:.2f} "
+                f"risk_pct={self.cfg.risk.per_trade_pct} "
+                f"risk_amount={risk_amount:.2f} stop_distance={stop_distance:.2f} "
+                f"tick_value={meta['trade_tick_value']} tick_size={meta['trade_tick_size']} "
+                f"money_per_lot={money_per_lot:.2f} raw_lots={raw:.4f} "
+                f"volume_min={meta['volume_min']}. "
+                f"Raise risk.per_trade_pct or lower risk.atr_stop_mult to enable entry."
             )
             return
 
