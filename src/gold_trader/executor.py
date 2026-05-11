@@ -39,6 +39,23 @@ class Executor:
         )
         return mt5_client.fetch_ohlcv(self.cfg.symbol, self.cfg.timeframe, warmup * 4)
 
+    def _log_bar_diagnostic(self, bar: pd.Series, signal_side: str | None) -> None:
+        """One-line per-bar dump of indicator values so we can see why a signal
+        was or wasn't generated. Useful while tuning filter thresholds."""
+        def f(x, p=2):
+            try:
+                v = float(x)
+            except (TypeError, ValueError):
+                return "nan"
+            return f"{v:.{p}f}"
+        self.log.info(
+            f"bar: close={f(bar.get('close'))} ema={f(bar.get('ema_trend'))} "
+            f"slope={f(bar.get('ema_slope'))} adx={f(bar.get('adx'))} "
+            f"atr_pct={f(bar.get('atr_pct'), 4)} "
+            f"dh={f(bar.get('donch_high'))} dl={f(bar.get('donch_low'))} "
+            f"signal={signal_side or 'none'}"
+        )
+
     def step(self) -> None:
         now = datetime.now(timezone.utc)
         if not self._in_session(now):
@@ -56,6 +73,7 @@ class Executor:
 
         data = add_indicators(closed, self.cfg)
         signal = evaluate_last_bar(data, self.cfg)
+        self._log_bar_diagnostic(data.iloc[-1], signal.side)
         positions = mt5_client.open_positions(
             self.cfg.symbol, self.cfg.execution.magic_number
         )

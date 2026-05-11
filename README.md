@@ -7,14 +7,14 @@ BTCUSD (Bitcoin) breakout/trend-following auto-trader for **Vantage** via MetaTr
 
 ## Strategy
 
-Donchian-channel breakout with multi-layer regime / strength / risk filters.
+Donchian-channel breakout with light regime/strength/risk filters.
 
 ### Long entry (all conditions on the most recent closed H1 bar)
-1. `close > Donchian_high(20).shift(1) + ATR(14) * 0.05` - breakout with ATR buffer
+1. `close > Donchian_high(20).shift(1)`                   - clean breakout (buffer disabled)
 2. `close > EMA(200)`                                     - trend filter
 3. `EMA(200)_now > EMA(200) 10 bars ago`                  - trend slope is up
-4. `ADX(14) >= 18`                                        - trending regime
-5. `0.3%% <= ATR(14) / close <= 2.5%%`                      - volatility regime
+4. `ADX(14) >= 10`                                        - sanity floor (most regimes pass)
+5. `0.1%% <= ATR(14) / close <= 10%%`                       - blocks only dead-flat or extreme-vol bars
 6. `<=1 consecutive loss today`                           - block on the 2nd consecutive loss
 7. Today's realized loss `< 1%% of equity`                 - daily loss cap
 
@@ -23,6 +23,10 @@ Short is symmetric (mirror with `<` and `< 0` slope).
 Conditions 1-5 are pure indicator math (`src/gold_trader/strategy.py`).
 Conditions 6-7 are enforced at the executor layer using closed deals from the
 MT5 history for the bot's `magic_number`. They reset at UTC midnight.
+
+The executor also writes a one-line `bar:` INFO log per H1 close with all
+indicator values, so it's easy to see which filter is rejecting setups when
+tuning thresholds.
 
 ### Stop / exit
 - Initial stop: `ATR(14) * 2` from entry (`risk.atr_stop_mult`).
