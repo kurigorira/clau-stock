@@ -14,7 +14,7 @@ _TIMEFRAME_NAMES = ("M1", "M5", "M15", "M30", "H1", "H4", "D1")
 @dataclass
 class TrendConfig:
     ema_length: int = 200
-    ema_slope_lookback: int = 10
+    ema_slope_lookback: int = 3       # very short lookback so a small uptick passes
 
 
 @dataclass
@@ -35,8 +35,8 @@ class RiskConfig:
 @dataclass
 class FilterConfig:
     adx_length: int = 14
-    adx_min: float = 10.0
-    atr_pct_min: float = 0.001
+    adx_min: float = 0.0              # ADX filter effectively disabled
+    atr_pct_min: float = 0.0001       # 0.01% works for FX as well as crypto/indices
     atr_pct_max: float = 0.10
 
 
