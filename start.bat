@@ -55,9 +55,11 @@ if not exist ".venv\Scripts\activate.bat" (
 )
 
 REM ==== 4. Spawn 2 bot processes, one per account ====
-start "clau-stock account 1" cmd /k "call .venv\Scripts\activate.bat && python scripts\run_live.py --account 1 config\example.yaml config\eurusd.yaml config\usdjpy.yaml config\xauusd.yaml config\xagusd.yaml config\copper.yaml config\cloil.yaml"
+REM   python -u forces unbuffered stdout/stderr so log lines appear in the cmd
+  REM window immediately rather than waiting for the buffer to fill.
+start "clau-stock account 1" cmd /k "call .venv\Scripts\activate.bat && python -u scripts\run_live.py --account 1 config\example.yaml config\eurusd.yaml config\usdjpy.yaml config\xauusd.yaml config\xagusd.yaml config\copper.yaml config\cloil.yaml"
 
-start "clau-stock account 2" cmd /k "call .venv\Scripts\activate.bat && python scripts\run_live.py --account 2 config\nvidia.yaml config\nvidia_24h.yaml config\jpn225ft.yaml config\hk50.yaml config\sp500ft.yaml"
+start "clau-stock account 2" cmd /k "call .venv\Scripts\activate.bat && python -u scripts\run_live.py --account 2 config\nvidia.yaml config\nvidia_24h.yaml config\jpn225ft.yaml config\hk50.yaml config\sp500ft.yaml"
 
 echo.
 echo [start.bat] launched account 1 (7 symbols: BTC/EUR/USDJPY/XAU/XAG/Copper/CL-OIL)
