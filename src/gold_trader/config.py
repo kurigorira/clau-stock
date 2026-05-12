@@ -26,7 +26,7 @@ class BreakoutConfig:
 
 @dataclass
 class RiskConfig:
-    per_trade_pct: float = 0.5
+    per_trade_pct: float = 1.0        # sized for ~JPY 1M demo accounts
     atr_length: int = 14
     atr_stop_mult: float = 2.0
     max_positions: int = 1
@@ -43,7 +43,7 @@ class FilterConfig:
 @dataclass
 class DailyGuardConfig:
     max_consecutive_losses: int = 2
-    max_loss_pct: float = 1.0
+    max_loss_pct: float = 2.0         # allow up to two losing trades at 1% each
 
 
 @dataclass
