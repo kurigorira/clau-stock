@@ -43,8 +43,8 @@ echo [start.bat] launching account-1 terminal: %MT5_PATH_1%
 start "" "%MT5_PATH_1%"
 echo [start.bat] launching account-2 terminal: %MT5_PATH_2%
 start "" "%MT5_PATH_2%"
-echo [start.bat] waiting 12 seconds for both terminals to load and auto-login...
-timeout /t 12 /nobreak >nul
+echo [start.bat] waiting 30 seconds for both terminals to load and auto-login...
+timeout /t 30 /nobreak >nul
 
 REM ==== 3. Verify venv ====
 if not exist ".venv\Scripts\activate.bat" (

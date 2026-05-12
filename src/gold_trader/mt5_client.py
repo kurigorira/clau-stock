@@ -6,6 +6,8 @@ and unit tests can run on non-Windows hosts.
 """
 from __future__ import annotations
 
+import sys
+import time as time_mod
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -23,6 +25,11 @@ _TIMEFRAME_MAP_LOOKUP = {
     "H4": "TIMEFRAME_H4",
     "D1": "TIMEFRAME_D1",
 }
+
+# How long to wait between MT5 initialize retries when the terminal is
+# still warming up (auto-login dialog, market-watch loading, etc.).
+_INIT_MAX_ATTEMPTS = 6
+_INIT_RETRY_DELAY_S = 5
 
 
 def _mt5():
@@ -49,8 +56,26 @@ def connect(creds: MT5Credentials) -> Iterator[object]:
     }
     if creds.path:
         init_kwargs["path"] = creds.path
-    if not mt5.initialize(**init_kwargs):
-        raise RuntimeError(f"MT5 initialize failed: {mt5.last_error()}")
+
+    initialized = False
+    last_err = None
+    for attempt in range(1, _INIT_MAX_ATTEMPTS + 1):
+        if mt5.initialize(**init_kwargs):
+            initialized = True
+            break
+        last_err = mt5.last_error()
+        if attempt < _INIT_MAX_ATTEMPTS:
+            print(
+                f"MT5 initialize attempt {attempt}/{_INIT_MAX_ATTEMPTS} failed "
+                f"({last_err}); retrying in {_INIT_RETRY_DELAY_S}s...",
+                file=sys.stderr,
+            )
+            time_mod.sleep(_INIT_RETRY_DELAY_S)
+
+    if not initialized:
+        raise RuntimeError(
+            f"MT5 initialize failed after {_INIT_MAX_ATTEMPTS} attempts: {last_err}"
+        )
     try:
         yield mt5
     finally:
