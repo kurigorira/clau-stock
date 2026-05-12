@@ -1,15 +1,20 @@
 """Entry point: start the live trading loop for one or more configs.
 
 Usage:
-    python scripts/run_live.py config/example.yaml
+    # single-account (legacy .env with MT5_LOGIN, MT5_PASSWORD, ...)
     python scripts/run_live.py config/example.yaml config/eurusd.yaml
 
+    # multi-account (use MT5_LOGIN_1, MT5_PASSWORD_1, ... in .env)
+    python scripts/run_live.py --account 1 config/example.yaml config/eurusd.yaml
+    python scripts/run_live.py --account 2 config/nvidia.yaml config/sp500ft.yaml
+
 When multiple configs are given they run in a single process with one shared
-MT5 connection. Each instance gets its own child logger so log lines from
-different symbols are distinguishable.
+MT5 connection. To trade two accounts at once, run two separate processes,
+each with its own --account flag pointing at a different MT5 terminal.
 """
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import time as time_mod
@@ -26,32 +31,53 @@ from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print(
-            "usage: run_live.py <config.yaml> [<config.yaml> ...]",
-            file=sys.stderr,
-        )
-        sys.exit(2)
+    parser = argparse.ArgumentParser(description="clau-stock live trader")
+    parser.add_argument(
+        "--account",
+        default=None,
+        help=(
+            "suffix for MT5_* env vars when running multiple accounts "
+            "(e.g. --account 1 reads MT5_LOGIN_1, MT5_PASSWORD_1, MT5_SERVER_1, MT5_PATH_1)."
+            " Omit for single-account mode (uses MT5_LOGIN etc. without suffix)."
+        ),
+    )
+    parser.add_argument("configs", nargs="+")
+    args = parser.parse_args()
+
     load_dotenv()
-    configs = [Config.from_yaml(p) for p in sys.argv[1:]]
+    configs = [Config.from_yaml(p) for p in args.configs]
+
+    log_file_default = (
+        f"logs/account{args.account}.log" if args.account else "logs/live.log"
+    )
     log = setup_logging(
         level=os.environ.get("LOG_LEVEL", "INFO"),
-        log_file=os.environ.get("LOG_FILE") or "logs/live.log",
+        log_file=os.environ.get("LOG_FILE") or log_file_default,
     )
-    creds = MT5Credentials(
-        login=int(os.environ["MT5_LOGIN"]),
-        password=os.environ["MT5_PASSWORD"],
-        server=os.environ["MT5_SERVER"],
-        path=os.environ.get("MT5_PATH") or None,
-    )
+
+    suffix = f"_{args.account}" if args.account else ""
+    try:
+        creds = MT5Credentials(
+            login=int(os.environ[f"MT5_LOGIN{suffix}"]),
+            password=os.environ[f"MT5_PASSWORD{suffix}"],
+            server=os.environ[f"MT5_SERVER{suffix}"],
+            path=os.environ.get(f"MT5_PATH{suffix}") or None,
+        )
+    except KeyError as missing:
+        sys.stderr.write(
+            f"missing env var {missing}. Did you set MT5_LOGIN{suffix} / "
+            f"MT5_PASSWORD{suffix} / MT5_SERVER{suffix} in .env?\n"
+        )
+        sys.exit(2)
+
     with connect(creds):
         executors = [Executor(cfg, log.getChild(cfg.symbol)) for cfg in configs]
+        account_tag = f" account={args.account}" if args.account else ""
         for ex in executors:
             log.info(
                 f"executor started for {ex.cfg.symbol} {ex.cfg.timeframe} "
-                f"(magic={ex.cfg.execution.magic_number})"
+                f"(magic={ex.cfg.execution.magic_number}){account_tag}"
             )
-        # Use the smallest poll interval so the most aggressive symbol sets the tempo.
         poll = min(c.execution.poll_seconds for c in configs)
         while True:
             for ex in executors:

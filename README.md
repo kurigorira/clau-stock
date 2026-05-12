@@ -1,28 +1,35 @@
 # clau-stock
 
 Multi-asset breakout/trend-following auto-trader for **Vantage** via MetaTrader 5.
-Ships with tuned presets for 12 instruments out of the box; any MT5 symbol can
-be added as a new YAML file.
+Ships with tuned presets for 12 instruments and a dual-account launcher out of
+the box; any MT5 symbol can be added as a new YAML file.
 
 > Live trading carries real financial risk. Run on a demo account first, validate
 > with backtests, and only deploy capital you can afford to lose.
 
 ## Built-in presets
 
-| YAML                       | Symbol         | Description                       | magic_number |
-|----------------------------|----------------|-----------------------------------|--------------|
-| `config/example.yaml`      | `BTCUSD`       | Bitcoin (24/7)                    | 20260509     |
-| `config/eurusd.yaml`       | `EURUSD`       | Euro / US Dollar                  | 20260511     |
-| `config/usdjpy.yaml`       | `USDJPY`       | US Dollar / Japanese Yen          | 20260512     |
-| `config/nvidia.yaml`       | `NVIDIA`       | NVIDIA Corp stock CFD             | 20260513     |
-| `config/nvidia_24h.yaml`   | `NVIDIA.24H`   | NVIDIA 24-hour CFD                | 20260514     |
-| `config/jpn225ft.yaml`     | `JPN225ft`     | Nikkei 225 Future                 | 20260515     |
-| `config/hk50.yaml`         | `HK50.r`       | Hang Seng Index Cash CFD          | 20260516     |
-| `config/sp500ft.yaml`      | `SP500ft.r`    | S&P 500 Future                    | 20260517     |
-| `config/xauusd.yaml`       | `XAUUSD`       | Gold / US Dollar                  | 20260518     |
-| `config/xagusd.yaml`       | `XAGUSD`       | Silver / US Dollar                | 20260519     |
-| `config/copper.yaml`       | `COPPER-Cr`    | Copper                            | 20260520     |
-| `config/cloil.yaml`        | `CL-OIL`       | Crude Oil Future CFD              | 20260521     |
+Default `start.bat` splits the 12 instruments across two MT5 accounts:
+
+### Account 1 (currencies / commodities / crypto)
+| YAML                       | Symbol         | magic_number |
+|----------------------------|----------------|--------------|
+| `config/example.yaml`      | `BTCUSD`       | 20260509     |
+| `config/eurusd.yaml`       | `EURUSD`       | 20260511     |
+| `config/usdjpy.yaml`       | `USDJPY`       | 20260512     |
+| `config/xauusd.yaml`       | `XAUUSD`       | 20260518     |
+| `config/xagusd.yaml`       | `XAGUSD`       | 20260519     |
+| `config/copper.yaml`       | `COPPER-Cr`    | 20260520     |
+| `config/cloil.yaml`        | `CL-OIL`       | 20260521     |
+
+### Account 2 (equities / indices)
+| YAML                       | Symbol         | magic_number |
+|----------------------------|----------------|--------------|
+| `config/nvidia.yaml`       | `NVIDIA`       | 20260513     |
+| `config/nvidia_24h.yaml`   | `NVIDIA.24H`   | 20260514     |
+| `config/jpn225ft.yaml`     | `JPN225ft`     | 20260515     |
+| `config/hk50.yaml`         | `HK50.r`       | 20260516     |
+| `config/sp500ft.yaml`      | `SP500ft.r`    | 20260517     |
 
 All presets share the same strategy / filter defaults (defined in
 `src/gold_trader/config.py`). Each YAML only overrides what's specific:
@@ -34,15 +41,15 @@ and `comment`.
 Donchian-channel breakout with light regime/strength/risk filters.
 
 ### Long entry (all conditions on the most recent closed H1 bar)
-1. `close > Donchian_high(20).shift(1)`                   - pure breakout (buffer disabled)
+1. `close > Donchian_high(20).shift(1)`                   - pure breakout
 2. `close > EMA(200)`                                     - trend filter
-3. `EMA(200)_now > EMA(200) 10 bars ago`                  - trend slope is up
-4. `ADX(14) >= 10`                                        - sanity floor
-5. `0.1%% <= ATR(14) / close <= 10%%`                       - blocks only dead-flat / blow-off bars
+3. `EMA(200)_now > EMA(200) 3 bars ago`                   - trend slope is up
+4. `ADX(14) >= 0`                                         - filter effectively off
+5. `0.01%% <= ATR(14) / close <= 10%%`                      - blocks only dead-flat / blow-off bars
 6. `<=1 consecutive loss today`                           - block on the 2nd consecutive loss
-7. Today's realized loss `< 1%% of equity`                 - daily loss cap
+7. Today's realized loss `< daily_guard.max_loss_pct%% of equity`
 
-Short is symmetric (mirror with `<` and `< 0` slope).
+Short is symmetric.
 
 Conditions 1-5 are pure indicator math (`src/gold_trader/strategy.py`).
 Conditions 6-7 are enforced at the executor layer using closed deals from the
@@ -53,10 +60,10 @@ MT5 history for that bot's `magic_number`. They reset at UTC midnight.
 - Exit: 10-bar reverse Donchian.
 
 ### Sizing
-Per-trade risk = `risk.per_trade_pct`%% of equity, sized via the live MT5 tick value
-so the same config works regardless of contract size.
+Per-trade risk = `risk.per_trade_pct`%% of equity, sized via the live MT5 tick
+value so the same config works regardless of contract size.
 
-## Quickstart
+## Quickstart (single-account)
 
 ```bash
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
@@ -64,19 +71,63 @@ pip install -r requirements.txt
 cp .env.example .env                                 # fill MT5 creds
 ```
 
-### Live (Windows + MT5 terminal logged in to Vantage)
 ```bash
-# all 12 presets at once (default)
-start.bat            # double-click on Windows
-
-# or a custom subset
+# Single account, one or many configs
 python scripts/run_live.py config/example.yaml config/eurusd.yaml
 ```
 
-All instances run inside a single Python process / single MT5 connection.
-Each instance gets its own child logger so log lines are prefixed with the
-symbol, e.g. `gold_trader.BTCUSD` / `gold_trader.EURUSD`. Each has its own
-`magic_number` so positions stay strictly separated even on the same account.
+## Dual-account setup
+
+To trade two accounts in parallel you need two MT5 terminals running side by
+side, each logged in to its own account.
+
+### 1. Install a second MT5 terminal (portable mode)
+
+MT5 locks each terminal to its data folder, so two installs with separate data
+folders can run concurrently.
+
+1. Copy `C:\Program Files\Vantage MetaTrader 5` to `C:\Vantage MT5 - Account 2`.
+2. Right-click the copied `terminal64.exe`, choose "Create shortcut", and on
+   the shortcut Properties append ` /portable` to the Target field.
+3. Launch the shortcut and log in with the **second account** credentials.
+4. Confirm both terminals can run at the same time.
+
+### 2. Populate `.env` with both credential sets
+
+```
+MT5_LOGIN_1=<account 1 login>
+MT5_PASSWORD_1=<account 1 password>
+MT5_SERVER_1=VantageInternational-Demo
+MT5_PATH_1=C:\Program Files\Vantage MetaTrader 5\terminal64.exe
+
+MT5_LOGIN_2=<account 2 login>
+MT5_PASSWORD_2=<account 2 password>
+MT5_SERVER_2=VantageInternational-Demo
+MT5_PATH_2=C:\Vantage MT5 - Account 2\terminal64.exe
+```
+
+The legacy un-suffixed (`MT5_LOGIN` / `MT5_PASSWORD` / ...) keys are still
+used if you run `python scripts/run_live.py` without `--account`.
+
+### 3. Launch
+
+```
+start.bat            # opens both MT5 terminals + spawns two bot windows
+```
+
+or manually:
+
+```bash
+python scripts/run_live.py --account 1 config/example.yaml config/eurusd.yaml ...
+python scripts/run_live.py --account 2 config/nvidia.yaml config/sp500ft.yaml ...
+```
+
+Each `--account N` instance reads `MT5_LOGIN_N` / `MT5_PASSWORD_N` /
+`MT5_SERVER_N` / `MT5_PATH_N` and writes to `logs/accountN.log`.
+
+To move a symbol between accounts: edit the symbol list on the corresponding
+`python scripts\run_live.py` line in `start.bat`. `magic_number` already keeps
+positions strictly separated regardless of which account places the order.
 
 ### Backtest
 ```bash
@@ -94,7 +145,7 @@ src/gold_trader/      core package (config, strategy, risk, mt5 client, executor
 scripts/              CLI entry points (live, backtest)
 config/               one YAML per instrument
 tests/                unit tests (no MT5 dependency)
-start.bat             Windows launcher: auto-starts MT5 then runs all bots
+start.bat             dual-account Windows launcher
 ```
 
 The package directory is still named `gold_trader` for historical reasons; it
@@ -103,14 +154,15 @@ is asset-agnostic and trades whatever `symbol` is set in each YAML config.
 ## Configuration
 `config/example.yaml` is the full reference. The other presets inherit the
 defaults defined in `src/gold_trader/config.py` and only override:
-- `symbol` - broker's symbol name (check the MT5 "Market Watch" panel)
+- `symbol`
 - `session.trade_days` - weekend exclusion for non-crypto markets
 - `execution.magic_number` - MUST be unique per running bot on the same account
-- `execution.deviation_points` - acceptable slippage (tighter for FX, wider for indices)
-- `execution.comment` - tag on every order so you can audit which preset placed it
+- `execution.deviation_points`
+- `execution.comment`
 
 To add a 13th asset: copy one of the YAMLs, edit `symbol` and `magic_number`,
-and append the new path to the `python scripts\run_live.py` line in `start.bat`.
+and append the path to the appropriate `python scripts\run_live.py` line in
+`start.bat`.
 
 ## Notes on Vantage / MT5
 - The `MetaTrader5` Python package is **Windows-only** and requires the MT5
@@ -118,10 +170,9 @@ and append the new path to the `python scripts\run_live.py` line in `start.bat`.
 - Use python.org's CPython, not the Microsoft Store build - the Store build
   runs in a sandbox that cannot launch `terminal64.exe` and `MT5 initialize`
   fails with `Process create failed`.
-- `MT5_PATH` in `.env` points to a specific `terminal64.exe` if you run multiple
-  MT5 installations side by side. `start.bat` reads it too.
 - Symbol names vary by broker. If a preset fails with `unknown symbol`, open the
   MT5 "Market Watch" panel, find the actual name on your Vantage account, and
   update the `symbol:` field in the relevant YAML.
-- The MetaTrader5 Python module supports only one connection per terminal, so
-  all symbols run inside a single Python process sharing that connection.
+- The MetaTrader5 Python module holds one connection per terminal per process,
+  so dual-account operation requires two terminals AND two Python processes
+  (one per account). `start.bat` handles both.

@@ -1,54 +1,52 @@
 @echo off
-REM One-click launcher for all configured trading bots.
-REM 1. Launches MT5 terminal if it's not already running.
-REM 2. Activates the venv.
-REM 3. Runs the live trader against every config in a single process.
+REM Dual-account launcher.
+REM Reads MT5_PATH_1 / MT5_PATH_2 from .env, launches both MT5 terminals,
+REM then spawns two Python processes (one per account) in separate windows.
 
 cd /d "%~dp0"
 
-REM ====== 1. Ensure MT5 terminal is running ======
-tasklist /FI "IMAGENAME eq terminal64.exe" 2>NUL | find /I "terminal64.exe" >NUL
-if not errorlevel 1 goto :mt5_running
-
-echo [start.bat] MT5 terminal not running. Locating terminal64.exe...
-
-if exist ".env" (
-    for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
-        if /I "%%a"=="MT5_PATH" set "MT5_PATH_FROM_ENV=%%~b"
-    )
+REM ==== 1. Read MT5 paths from .env ====
+if not exist ".env" (
+    echo [start.bat] .env not found
+    pause
+    exit /b 1
 )
-
-set "MT5_EXE="
-if defined MT5_PATH_FROM_ENV if exist "%MT5_PATH_FROM_ENV%" set "MT5_EXE=%MT5_PATH_FROM_ENV%"
-if not defined MT5_EXE if exist "C:\Program Files\Vantage MetaTrader 5\terminal64.exe" set "MT5_EXE=C:\Program Files\Vantage MetaTrader 5\terminal64.exe"
-if not defined MT5_EXE if exist "C:\Program Files (x86)\Vantage MetaTrader 5\terminal64.exe" set "MT5_EXE=C:\Program Files (x86)\Vantage MetaTrader 5\terminal64.exe"
-if not defined MT5_EXE if exist "C:\Program Files\Vantage International MT5\terminal64.exe" set "MT5_EXE=C:\Program Files\Vantage International MT5\terminal64.exe"
-if not defined MT5_EXE if exist "C:\Program Files\MetaTrader 5\terminal64.exe" set "MT5_EXE=C:\Program Files\MetaTrader 5\terminal64.exe"
-if not defined MT5_EXE if exist "C:\Program Files (x86)\MetaTrader 5\terminal64.exe" set "MT5_EXE=C:\Program Files (x86)\MetaTrader 5\terminal64.exe"
-if not defined MT5_EXE if exist "%LOCALAPPDATA%\Programs\Vantage MetaTrader 5\terminal64.exe" set "MT5_EXE=%LOCALAPPDATA%\Programs\Vantage MetaTrader 5\terminal64.exe"
-
-if not defined MT5_EXE (
-    echo [start.bat] Could not find terminal64.exe in common locations.
-    echo.
-    echo Add this line to .env with the actual path on your machine:
-    echo     MT5_PATH=C:\full\path\to\terminal64.exe
-    echo.
+set "MT5_PATH_1="
+set "MT5_PATH_2="
+for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
+    if /I "%%a"=="MT5_PATH_1" set "MT5_PATH_1=%%~b"
+    if /I "%%a"=="MT5_PATH_2" set "MT5_PATH_2=%%~b"
+)
+if not defined MT5_PATH_1 (
+    echo [start.bat] MT5_PATH_1 not set in .env
+    pause
+    exit /b 1
+)
+if not defined MT5_PATH_2 (
+    echo [start.bat] MT5_PATH_2 not set in .env
+    pause
+    exit /b 1
+)
+if not exist "%MT5_PATH_1%" (
+    echo [start.bat] MT5_PATH_1 not found on disk: %MT5_PATH_1%
+    pause
+    exit /b 1
+)
+if not exist "%MT5_PATH_2%" (
+    echo [start.bat] MT5_PATH_2 not found on disk: %MT5_PATH_2%
     pause
     exit /b 1
 )
 
-echo [start.bat] launching: %MT5_EXE%
-start "" "%MT5_EXE%"
-echo [start.bat] waiting 10 seconds for MT5 to load and auto-login...
-timeout /t 10 /nobreak >nul
-goto :mt5_done
+REM ==== 2. Launch both MT5 terminals (re-launching is safe; MT5 dedupes per data folder) ====
+echo [start.bat] launching account-1 terminal: %MT5_PATH_1%
+start "" "%MT5_PATH_1%"
+echo [start.bat] launching account-2 terminal: %MT5_PATH_2%
+start "" "%MT5_PATH_2%"
+echo [start.bat] waiting 12 seconds for both terminals to load and auto-login...
+timeout /t 12 /nobreak >nul
 
-:mt5_running
-echo [start.bat] MT5 terminal already running.
-
-:mt5_done
-
-REM ====== 2. Activate venv ======
+REM ==== 3. Verify venv ====
 if not exist ".venv\Scripts\activate.bat" (
     echo [start.bat] .venv not found.
     echo Run: python -m venv .venv ^&^& .venv\Scripts\activate ^&^& pip install -r requirements.txt
@@ -56,26 +54,15 @@ if not exist ".venv\Scripts\activate.bat" (
     exit /b 1
 )
 
-call .venv\Scripts\activate.bat
+REM ==== 4. Spawn 2 bot processes, one per account ====
+start "clau-stock account 1" cmd /k "call .venv\Scripts\activate.bat && python scripts\run_live.py --account 1 config\example.yaml config\eurusd.yaml config\usdjpy.yaml config\xauusd.yaml config\xagusd.yaml config\copper.yaml config\cloil.yaml"
 
-REM ====== 3. Run the bots (all symbols, single process) ======
-title clau-stock live (multi-asset)
-echo [start.bat] launching bots for all configured symbols. Press Ctrl+C to stop.
-echo.
-python scripts\run_live.py ^
-    config\example.yaml ^
-    config\eurusd.yaml ^
-    config\usdjpy.yaml ^
-    config\nvidia.yaml ^
-    config\nvidia_24h.yaml ^
-    config\jpn225ft.yaml ^
-    config\hk50.yaml ^
-    config\sp500ft.yaml ^
-    config\xauusd.yaml ^
-    config\xagusd.yaml ^
-    config\copper.yaml ^
-    config\cloil.yaml
+start "clau-stock account 2" cmd /k "call .venv\Scripts\activate.bat && python scripts\run_live.py --account 2 config\nvidia.yaml config\nvidia_24h.yaml config\jpn225ft.yaml config\hk50.yaml config\sp500ft.yaml"
 
 echo.
-echo [start.bat] bot exited. Window stays open so you can read any error above.
+echo [start.bat] launched account 1 (7 symbols: BTC/EUR/USDJPY/XAU/XAG/Copper/CL-OIL)
+echo [start.bat] launched account 2 (5 symbols: NVIDIA/NVIDIA.24H/JPN225/HK50/SP500)
+echo Logs: logs\account1.log / logs\account2.log
+echo Close the bot windows or press Ctrl+C inside them to stop.
+echo.
 pause
