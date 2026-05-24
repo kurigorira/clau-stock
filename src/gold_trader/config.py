@@ -15,6 +15,9 @@ _TIMEFRAME_NAMES = ("M1", "M5", "M15", "M30", "H1", "H4", "D1")
 class TrendConfig:
     ema_length: int = 200
     ema_slope_lookback: int = 3
+    # H4 trend filter: only take H1 breakouts that agree with the H4 trend
+    # direction (EMA-slope + ADX on H4). Set to "" to disable the filter.
+    higher_timeframe: str = "H4"
 
 
 @dataclass
@@ -64,6 +67,19 @@ class ExecutionConfig:
 
 
 @dataclass
+class NotifyConfig:
+    # When enabled, signal entries trigger an email via Gmail SMTP. SMTP
+    # credentials come from env vars (GMAIL_USER, GMAIL_APP_PASSWORD,
+    # NOTIFY_TO); if any are missing the notifier silently no-ops so the
+    # bot still trades.
+    enabled: bool = True
+    # dry_run is reserved for a future "notify-only" mode that skips
+    # mt5.order_send entirely; the executor does not consult it yet.
+    dry_run: bool = False
+    throttle_sec: int = 60
+
+
+@dataclass
 class Config:
     symbol: str = "BTCUSD"
     timeframe: str = "H1"
@@ -74,11 +90,17 @@ class Config:
     daily_guard: DailyGuardConfig = field(default_factory=DailyGuardConfig)
     session: SessionConfig = field(default_factory=SessionConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
+    notify: NotifyConfig = field(default_factory=NotifyConfig)
 
     def __post_init__(self) -> None:
         if self.timeframe not in _TIMEFRAME_NAMES:
             raise ValueError(
                 f"timeframe must be one of {_TIMEFRAME_NAMES}, got {self.timeframe}"
+            )
+        if self.trend.higher_timeframe and self.trend.higher_timeframe not in _TIMEFRAME_NAMES:
+            raise ValueError(
+                f"trend.higher_timeframe must be one of {_TIMEFRAME_NAMES} or '' to disable,"
+                f" got {self.trend.higher_timeframe}"
             )
 
     @classmethod
@@ -95,6 +117,7 @@ class Config:
             daily_guard=DailyGuardConfig(**(raw.get("daily_guard") or {})),
             session=_parse_session(raw.get("session") or {}),
             execution=ExecutionConfig(**(raw.get("execution") or {})),
+            notify=NotifyConfig(**(raw.get("notify") or {})),
         )
 
 

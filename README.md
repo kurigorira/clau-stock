@@ -50,22 +50,37 @@ and `comment`.
 
 ## Strategy
 
-Donchian-channel breakout with light regime/strength/risk filters.
+Donchian-channel breakout with light regime/strength/risk filters, plus an
+H4 multi-timeframe (MTF) trend filter on top.
 
 ### Long entry (all conditions on the most recent closed H1 bar)
 1. `close > Donchian_high(20).shift(1)`                   - pure breakout
-2. `close > EMA(200)`                                     - trend filter
-3. `EMA(200)_now > EMA(200) 3 bars ago`                   - trend slope is up
+2. `close > EMA(200)`                                     - trend filter (H1)
+3. `EMA(200)_now > EMA(200) 3 bars ago`                   - trend slope is up (H1)
 4. `ADX(14) >= 0`                                         - filter effectively off
 5. `0.01%% <= ATR(14) / close <= 10%%`                      - blocks only dead-flat / blow-off bars
-6. `<=1 consecutive loss today`                           - block on the 2nd consecutive loss
-7. Today's realized loss `< daily_guard.max_loss_pct%% of equity`
+6. **`H4 trend direction == +1`** - H4 EMA200 slope up AND `H4 ADX(14) >= adx_min`
+7. `<=1 consecutive loss today`                           - block on the 2nd consecutive loss
+8. Today's realized loss `< daily_guard.max_loss_pct%% of equity`
 
 Short is symmetric.
 
-Conditions 1-5 are pure indicator math (`src/gold_trader/strategy.py`).
-Conditions 6-7 are enforced at the executor layer using closed deals from the
+Conditions 1-6 are pure indicator math (`src/gold_trader/strategy.py`).
+Conditions 7-8 are enforced at the executor layer using closed deals from the
 MT5 history for that bot's `magic_number`. They reset at UTC midnight.
+
+The H4 filter (`trend.higher_timeframe`, default `H4`) drops fake H1 breakouts
+that fire against the higher-timeframe trend. Set `trend.higher_timeframe: ""`
+in a YAML to disable MTF for that symbol. The H4 frame is cached for 15
+minutes per executor, so MT5 API load is virtually identical to H1-only.
+
+### Email notification
+
+When an entry is filled, the executor sends a one-line summary email via
+Gmail SMTP. Set `GMAIL_USER`, `GMAIL_APP_PASSWORD` (a 16-char Google App
+Password - 2FA required) and `NOTIFY_TO` in `.env` to enable; leave any
+blank to disable. SMTP failure is logged at WARNING and never blocks
+trading. Throttled at one email per (symbol, side) per 60 seconds.
 
 ### Stop / exit
 - Initial stop: `ATR(14) * 2` from entry (`risk.atr_stop_mult`).

@@ -7,7 +7,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gold_trader.config import Config  # noqa: E402
-from gold_trader.strategy import add_indicators, evaluate_last_bar  # noqa: E402
+from gold_trader.strategy import add_indicators, evaluate_last_bar, h4_trend_dir  # noqa: E402
 
 
 def _ramp(n: int, start: float = 1800.0, step: float = 1.0) -> pd.DataFrame:
@@ -114,3 +114,68 @@ def test_ema_slope_lookback_too_long_blocks():
     data = add_indicators(_ramp(60, start=1800.0, step=1.0), cfg)
     sig = evaluate_last_bar(data, cfg)
     assert sig.side is None
+
+
+# ---------------------------------------------------------------------------
+# MTF (H4 filter + H1 entry) tests
+# ---------------------------------------------------------------------------
+
+
+def _mtf_cfg() -> Config:
+    """Like _cfg() but with the H4 higher_timeframe filter active."""
+    cfg = _cfg()
+    cfg.trend.higher_timeframe = "H4"
+    return cfg
+
+
+def test_h4_uptrend_h1_break_allows_buy():
+    cfg = _mtf_cfg()
+    h1 = add_indicators(_ramp(60, start=1800.0, step=1.0), cfg)
+    h4 = add_indicators(_ramp(60, start=1800.0, step=4.0), cfg)
+    sig = evaluate_last_bar(h1, cfg, h4)
+    assert sig.side == "buy"
+    assert sig.h4_trend_dir == 1
+
+
+def test_h4_downtrend_blocks_h1_buy_break():
+    cfg = _mtf_cfg()
+    h1 = add_indicators(_ramp(60, start=1800.0, step=1.0), cfg)  # H1 says buy
+    h4 = add_indicators(_ramp(60, start=2000.0, step=-4.0), cfg)  # H4 says down
+    sig = evaluate_last_bar(h1, cfg, h4)
+    assert sig.side is None
+    assert sig.h4_trend_dir == -1
+
+
+def test_h4_downtrend_h1_sell_break_allows_sell():
+    cfg = _mtf_cfg()
+    h1 = add_indicators(_ramp(60, start=2000.0, step=-1.0), cfg)
+    h4 = add_indicators(_ramp(60, start=2000.0, step=-4.0), cfg)
+    sig = evaluate_last_bar(h1, cfg, h4)
+    assert sig.side == "sell"
+    assert sig.h4_trend_dir == -1
+
+
+def test_h4_high_adx_required_for_trend_dir():
+    cfg = _mtf_cfg()
+    cfg.filters.adx_min = 1000.0  # H4 will never qualify as trending
+    h1 = add_indicators(_ramp(60, start=1800.0, step=1.0), cfg)
+    h4 = add_indicators(_ramp(60, start=1800.0, step=4.0), cfg)
+    # H1 itself also fails ADX, so signal is None; but verify h4_dir==0 too
+    assert h4_trend_dir(h4, cfg) == 0
+
+
+def test_mtf_disabled_when_higher_timeframe_blank():
+    cfg = _cfg()
+    cfg.trend.higher_timeframe = ""
+    h1 = add_indicators(_ramp(60, start=1800.0, step=1.0), cfg)
+    h4 = add_indicators(_ramp(60, start=2000.0, step=-4.0), cfg)
+    # H4 says down, but filter is off => H1 breakout wins
+    sig = evaluate_last_bar(h1, cfg, h4)
+    assert sig.side == "buy"
+
+
+def test_df_h4_none_preserves_legacy_behaviour():
+    cfg = _mtf_cfg()  # higher_timeframe = "H4", but we pass df_h4=None
+    h1 = add_indicators(_ramp(60, start=1800.0, step=1.0), cfg)
+    sig = evaluate_last_bar(h1, cfg, None)
+    assert sig.side == "buy"

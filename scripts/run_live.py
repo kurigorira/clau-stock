@@ -71,7 +71,9 @@ def main() -> None:
         sys.exit(2)
 
     with connect(creds):
-        executors = [Executor(cfg, log.getChild(cfg.symbol)) for cfg in configs]
+        executors = [
+            Executor(cfg, log.getChild(cfg.symbol), account=args.account) for cfg in configs
+        ]
         account_tag = f" account={args.account}" if args.account else ""
         for ex in executors:
             log.info(

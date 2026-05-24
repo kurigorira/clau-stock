@@ -15,6 +15,33 @@ class Signal:
     stop: float
     entry_ref: float
     atr: float
+    # Populated when MTF filtering is on; used by the notifier in the email body.
+    donch_high: float = 0.0
+    donch_low: float = 0.0
+    h4_trend_dir: int = 0   # +1 / -1 / 0
+
+
+def h4_trend_dir(df_h4: pd.DataFrame, cfg: Config) -> int:
+    """Return +1 / -1 / 0 from an indicator-enriched H4 frame.
+
+    Uses the *last fully closed* H4 bar (df_h4.iloc[-1] after the executor
+    has already dropped the still-forming bar). +1 when ema_slope > 0 and
+    ADX >= adx_min, -1 when ema_slope < 0 and ADX >= adx_min, else 0.
+    """
+    if len(df_h4) == 0:
+        return 0
+    bar = df_h4.iloc[-1]
+    ema_slope = float(bar["ema_slope"])
+    adx = float(bar["adx"])
+    if np.isnan(ema_slope) or np.isnan(adx):
+        return 0
+    if adx < cfg.filters.adx_min:
+        return 0
+    if ema_slope > 0:
+        return 1
+    if ema_slope < 0:
+        return -1
+    return 0
 
 
 def _ema(series: pd.Series, length: int) -> pd.Series:
@@ -86,7 +113,11 @@ def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     return out
 
 
-def evaluate_last_bar(df: pd.DataFrame, cfg: Config) -> Signal:
+def evaluate_last_bar(
+    df: pd.DataFrame,
+    cfg: Config,
+    df_h4: Optional[pd.DataFrame] = None,
+) -> Signal:
     """Return entry signal computed on the most recent *closed* bar.
 
     Conditions (long; short is symmetric):
@@ -95,8 +126,11 @@ def evaluate_last_bar(df: pd.DataFrame, cfg: Config) -> Signal:
       3. EMA(trend) now > EMA(trend) ema_slope_lookback bars ago
       4. ADX(adx_length) >= adx_min
       5. atr_pct_min <= ATR / close <= atr_pct_max
+      6. (when df_h4 is given and cfg.trend.higher_timeframe is set)
+         signal side agrees with the H4 trend direction
     Daily-loss / consecutive-loss filters are enforced at the executor layer
-    because they need account history.
+    because they need account history. df_h4=None preserves the legacy
+    H1-only behaviour for tests that don't supply an H4 frame.
     """
     warmup = max(
         cfg.trend.ema_length,
@@ -133,11 +167,18 @@ def evaluate_last_bar(df: pd.DataFrame, cfg: Config) -> Signal:
     buffer = cfg.breakout.atr_buffer_mult * atr
     stop_dist = cfg.risk.atr_stop_mult * atr
 
+    h4_dir = h4_trend_dir(df_h4, cfg) if (df_h4 is not None and cfg.trend.higher_timeframe) else 0
+    mtf_on = df_h4 is not None and cfg.trend.higher_timeframe
+
     if close > high_ref + buffer and close > ema and ema_slope > 0:
-        return Signal("buy", stop=close - stop_dist, entry_ref=close, atr=atr)
+        if mtf_on and h4_dir != 1:
+            return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
+        return Signal("buy", close - stop_dist, close, atr, high_ref, low_ref, h4_dir)
     if close < low_ref - buffer and close < ema and ema_slope < 0:
-        return Signal("sell", stop=close + stop_dist, entry_ref=close, atr=atr)
-    return Signal(None, 0.0, close, atr)
+        if mtf_on and h4_dir != -1:
+            return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
+        return Signal("sell", close + stop_dist, close, atr, high_ref, low_ref, h4_dir)
+    return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
 
 
 def should_exit(position_side: str, bar: pd.Series) -> bool:
