@@ -78,11 +78,15 @@ start "clau-stock account 2" cmd /k "call .venv\Scripts\activate.bat && python -
 
 start "clau-stock account 3" cmd /k "call .venv\Scripts\activate.bat && python -u scripts\run_live.py --account 3 config\eurusd_small.yaml"
 
+REM Price-change alerts (independent of trading; binds to account 1's MT5 terminal).
+start "clau-stock alerts" cmd /k "call .venv\Scripts\activate.bat && python -u scripts\run_alerts.py --account 1 config\watchlist.yaml config\example.yaml config\eurusd.yaml config\usdjpy.yaml config\xauusd.yaml config\xagusd.yaml config\copper.yaml config\cloil.yaml config\nvidia.yaml config\nvidia_24h.yaml config\jpn225ft.yaml config\hk50.yaml config\sp500ft.yaml config\eurusd_small.yaml"
+
 echo.
 echo [start.bat] launched account 1 (7 symbols: BTC/EUR/USDJPY/XAU/XAG/Copper/CL-OIL)
 echo [start.bat] launched account 2 (5 symbols: NVIDIA/NVIDIA.24H/JPN225/HK50/SP500)
 echo [start.bat] launched account 3 (1 symbol:  EURUSD-small, LIVE JPY 20k)
-echo Logs: logs\account1.log / logs\account2.log / logs\account3.log
+echo [start.bat] launched alerts   (13 symbols + watchlist.yaml extras)
+echo Logs: logs\account1.log / logs\account2.log / logs\account3.log / logs\alerts1.log
 echo Close the bot windows or press Ctrl+C inside them to stop.
 echo.
 pause

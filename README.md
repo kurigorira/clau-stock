@@ -82,6 +82,23 @@ Password - 2FA required) and `NOTIFY_TO` in `.env` to enable; leave any
 blank to disable. SMTP failure is logged at WARNING and never blocks
 trading. Throttled at one email per (symbol, side) per 60 seconds.
 
+### Price-change alerts (separate from entry signals)
+
+`scripts/run_alerts.py` is an independent loop that emails you whenever a
+watched symbol moves more than `threshold_pct` over the last
+`window_minutes` of M1 bars. It does not trade.
+
+Defaults (`config/watchlist.yaml`):
+- `threshold_pct: 2.0` - fires at |Δ| >= 2%
+- `window_minutes: 10` - close vs close 10 M1 bars ago
+- `poll_seconds: 30` - refresh interval per symbol
+- `throttle_sec: 1800` - 30-min cooldown per symbol
+
+The alerts process watches the 13 trading-preset symbols by default;
+add anything else to `extra_symbols:` in `watchlist.yaml`. `start.bat`
+launches the alerts process automatically on account 1's MT5 terminal.
+Log: `logs/alerts1.log`. Email subject: `[clau-stock alert] XAUUSD +2.34% in 10min`.
+
 ### Stop / exit
 - Initial stop: `ATR(14) * 2` from entry (`risk.atr_stop_mult`).
 - Exit: 10-bar reverse Donchian.
