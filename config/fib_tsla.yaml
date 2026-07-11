@@ -1,0 +1,28 @@
+# TSLA fibonacci retrace preset (stock, account 2).
+# Entry: H4 trend + fib 38.2-78.6% pullback + 2-bar bounce + volume + MACD.
+# TP at the 161.8% extension; SL beyond the H4 swing. See README "Fibonacci".
+# Inherits all other defaults from src/gold_trader/config.py.
+symbol: TSLA
+timeframe: H1
+strategy: fibonacci
+
+risk:
+  per_trade_pct: 0.3
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  atr_pct_min: 0.001
+  atr_pct_max: 0.1
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260727
+  deviation_points: 30
+  comment: "fib_tsla"

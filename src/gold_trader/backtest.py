@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 
 from .config import Config
-from .strategy import add_indicators
+from .data import resample_ohlcv
+from .strategy import add_indicators, evaluate_fib_entry
 
 
 @dataclass
@@ -27,11 +28,13 @@ def run_backtest(
     *,
     slippage_price: float = 0.0,
 ) -> dict:
-    """Bar-by-bar backtest. Mirrors strategy.evaluate_last_bar entry filters.
+    """Bar-by-bar backtest dispatched on cfg.strategy.
 
     Daily-guard limits (consecutive losses, daily loss cap) are NOT applied
     here — they're enforced live by the executor against the broker account.
     """
+    if cfg.strategy == "fibonacci":
+        return _run_backtest_fib(df, cfg, slippage_price=slippage_price)
     data = add_indicators(df, cfg)
     trades: List[Trade] = []
     side: str | None = None
@@ -104,6 +107,97 @@ def run_backtest(
                 entry_price = close - slippage_price
                 entry_time = bar.name
                 stop = close + stop_mult * atr
+
+    return _summary(trades)
+
+
+def _run_backtest_fib(
+    df: pd.DataFrame,
+    cfg: Config,
+    *,
+    slippage_price: float = 0.0,
+) -> dict:
+    """Fibonacci-strategy backtest over an H1 frame.
+
+    H4 bars are synthesised from the H1 data via resample. Look-ahead is
+    avoided by only handing evaluate_fib_entry the H4 bars that had fully
+    closed before the current H1 bar closed (H4 open <= t - 3h for an H1
+    bar opening at t). Exits: SL hit, TP hit, or the Donchian reverse-channel
+    exit — the same safety net the live executor applies to every position.
+    When SL and TP are both touched within one bar the SL fills first
+    (conservative).
+    """
+    data = add_indicators(df, cfg)
+    h4 = add_indicators(resample_ohlcv(df, "4h"), cfg)
+    # h4_closed_count[i] = number of H4 bars fully closed before H1 bar i closes
+    closed_counts = h4.index.searchsorted(
+        data.index - pd.Timedelta(hours=3), side="right"
+    )
+
+    trades: List[Trade] = []
+    side: str | None = None
+    entry_price = 0.0
+    entry_time: pd.Timestamp | None = None
+    stop = 0.0
+    tp = 0.0
+
+    warmup = max(cfg.fibonacci.vol_sma_length, cfg.fibonacci.macd_slow) + 2
+    for i in range(warmup, len(data)):
+        bar = data.iloc[i]
+
+        if side is not None:
+            hit_stop = (
+                (side == "buy" and bar["low"] <= stop)
+                or (side == "sell" and bar["high"] >= stop)
+            )
+            hit_tp = (
+                (side == "buy" and bar["high"] >= tp)
+                or (side == "sell" and bar["low"] <= tp)
+            )
+            exit_signal = (
+                (side == "buy" and bar["close"] < bar["exit_low"])
+                or (side == "sell" and bar["close"] > bar["exit_high"])
+            )
+            if hit_stop or hit_tp or exit_signal:
+                if hit_stop:
+                    exit_price = stop
+                elif hit_tp:
+                    exit_price = tp
+                else:
+                    exit_price = float(bar["close"])
+                exit_price -= slippage_price if side == "buy" else -slippage_price
+                pnl = (
+                    exit_price - entry_price
+                    if side == "buy"
+                    else entry_price - exit_price
+                )
+                trades.append(
+                    Trade(
+                        side=side,
+                        entry_time=entry_time,  # type: ignore[arg-type]
+                        entry_price=entry_price,
+                        exit_time=bar.name,
+                        exit_price=exit_price,
+                        stop=stop,
+                        pnl_price=pnl,
+                    )
+                )
+                side = None
+
+        if side is None:
+            k = int(closed_counts[i])
+            if k < cfg.fibonacci.swing_lookback:
+                continue
+            sig = evaluate_fib_entry(data.iloc[: i + 1], h4.iloc[:k], cfg)
+            if sig.side is None or sig.tp is None:
+                continue
+            side = sig.side
+            entry_price = sig.entry_ref + (
+                slippage_price if side == "buy" else -slippage_price
+            )
+            entry_time = bar.name
+            stop = sig.stop
+            tp = sig.tp
 
     return _summary(trades)
 

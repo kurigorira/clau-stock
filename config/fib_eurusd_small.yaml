@@ -1,0 +1,35 @@
+# Account 3 (live, ~JPY 20k) EURUSD fibonacci preset.
+# Successor to config/eurusd_small.yaml — same magic_number so the executor
+# keeps managing any position the old donchian preset left open. Filters stay
+# tighter than the demo presets because one bad fill is ~5% of this account.
+symbol: EURUSD
+timeframe: H1
+strategy: fibonacci
+
+fibonacci:
+  retrace_min: 0.5              # demand a deeper pullback than the demo presets
+  retrace_max: 0.786
+  bounce_bars: 2
+  vol_mult: 1.3
+
+risk:
+  per_trade_pct: 1.0            # ~JPY 200 risk per trade on a JPY 20k account
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  adx_min: 25.0                 # H4 trend must be unambiguous
+  atr_pct_min: 0.0003
+  atr_pct_max: 0.005
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0             # halt for the day at ~JPY 400 realized loss
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260523        # inherited from eurusd_small.yaml (donchian)
+  deviation_points: 10
+  comment: "fib_eurusd_small"

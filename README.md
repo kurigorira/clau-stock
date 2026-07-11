@@ -1,15 +1,38 @@
 # clau-stock
 
-Multi-asset breakout/trend-following auto-trader for **Vantage** via MetaTrader 5.
-Ships with tuned presets for 13 instruments and a tri-account launcher out of
-the box; any MT5 symbol can be added as a new YAML file.
+Multi-asset auto-trader for **Vantage** via MetaTrader 5. Two strategies —
+`donchian` (breakout) and `fibonacci` (pullback, the current default rollout) —
+with presets for 50 instruments and a tri-account launcher out of the box; any
+MT5 symbol can be added as a new YAML file.
 
 > Live trading carries real financial risk. Run on a demo account first, validate
 > with backtests, and only deploy capital you can afford to lose.
 
 ## Built-in presets
 
-Default `start.bat` splits the 13 instruments across three MT5 accounts:
+`start.bat` launches the **fibonacci** presets (`config/fib_*.yaml`, 50 symbols
++ the account-3 small preset):
+
+| account | class | symbols | magic range |
+|---|---|---|---|
+| 1 | FX (14) | EURUSD USDJPY GBPUSD AUDUSD NZDUSD USDCAD USDCHF EURJPY GBPJPY AUDJPY EURGBP EURAUD CADJPY CHFJPY | legacy + 20260701-12 |
+| 1 | metals/energy (8) | XAUUSD XAGUSD COPPER-Cr CL-OIL UK-OIL NG XPTUSD XPDUSD | legacy + 20260713-16 |
+| 1 | crypto (6) | BTCUSD ETHUSD XRPUSD SOLUSD LTCUSD ADAUSD | legacy + 20260717-21 |
+| 2 | indices (8) | SP500ft.r JPN225ft HK50.r NAS100ft DJ30ft GER40ft UK100ft AUS200ft | legacy + 20260722-26 |
+| 2 | stocks (14) | NVIDIA NVIDIA.24H TSLA AAPL MSFT GOOGL META AMZN NFLX AMD INTC JPM BA XOM | legacy + 20260727-38 |
+| 3 | live small (1) | EURUSD (`fib_eurusd_small.yaml`) | 20260523 |
+
+Symbols carried over from the original 13-instrument rollout **keep their old
+magic_number**, so open positions from the retired donchian presets are adopted
+by the matching fib preset and exit through the shared safety exit. The 37 new
+symbols use fresh magics (20260701+). **Verify new symbol names against your
+MT5 Market Watch** — broker naming varies; fix the `symbol:` field on an
+`unknown symbol` error.
+
+The retired donchian YAMLs (`config/eurusd.yaml` etc.) remain in the repo for
+reference and can still be launched manually or backtested.
+
+### Legacy preset map (donchian era)
 
 ### Account 1 (currencies / commodities / crypto)
 | YAML                       | Symbol         | magic_number |
@@ -48,31 +71,58 @@ All presets share the same strategy / filter defaults (defined in
 `symbol`, `session.trade_days`, `execution.magic_number`, `deviation_points`
 and `comment`.
 
-## Strategy
+## Strategies
 
-Donchian-channel breakout with light regime/strength/risk filters, plus an
-H4 multi-timeframe (MTF) trend filter on top.
+Selected per-YAML via `strategy: donchian | fibonacci` (default `donchian`).
+Both share the same H4 trend gate, ATR% sanity band, daily guard, position
+sizing, and the Donchian reverse-channel safety exit.
 
-### Long entry (all conditions on the most recent closed H1 bar)
-1. `close > Donchian_high(20).shift(1)`                   - pure breakout
-2. `close > EMA(200)`                                     - trend filter (H1)
-3. `EMA(200)_now > EMA(200) 3 bars ago`                   - trend slope is up (H1)
-4. `ADX(14) >= 0`                                         - filter effectively off
-5. `0.01%% <= ATR(14) / close <= 10%%`                      - blocks only dead-flat / blow-off bars
-6. **`H4 trend direction == +1`** - H4 EMA200 slope up AND `H4 ADX(14) >= adx_min`
-7. `<=1 consecutive loss today`                           - block on the 2nd consecutive loss
-8. Today's realized loss `< daily_guard.max_loss_pct%% of equity`
+### fibonacci (current rollout) — pullback entry, extension take-profit
 
-Short is symmetric.
+Long entry, all on the most recent closed H1 bar (short symmetric):
+1. **H4 trend == UP** - H4 EMA200 slope up AND `H4 ADX(14) >= adx_min`
+2. **Fib zone** - price inside the 38.2%-78.6% retrace of the H4 swing
+   (high/low of the last `swing_lookback` = 20 closed H4 bars)
+3. **Bounce** - `bounce_bars` (2) consecutive rising H1 closes
+4. **Volume** - H1 volume >= `vol_mult` (1.2) x SMA20(volume)
+5. **MACD** - H1 MACD(12,26,9) histogram rising vs the previous bar
+6. ATR% inside the per-class `filters.atr_pct_*` band
 
-Conditions 1-6 are pure indicator math (`src/gold_trader/strategy.py`).
-Conditions 7-8 are enforced at the executor layer using closed deals from the
-MT5 history for that bot's `magic_number`. They reset at UTC midnight.
+Orders carry both **SL** (beyond the swing low by `stop_atr_buffer` x ATR) and
+**TP** (the 161.8% extension: `swing_high + 0.618 x swing_range`). The
+executor's Donchian-10 reverse exit still applies as a trailing safety net, so
+a position can close before TP if the move dies.
 
-The H4 filter (`trend.higher_timeframe`, default `H4`) drops fake H1 breakouts
-that fire against the higher-timeframe trend. Set `trend.higher_timeframe: ""`
-in a YAML to disable MTF for that symbol. The H4 frame is cached for 15
-minutes per executor, so MT5 API load is virtually identical to H1-only.
+Tunables live under `fibonacci:` in each YAML — see `FibonacciConfig` in
+`src/gold_trader/config.py`.
+
+### donchian (legacy) — breakout entry
+
+1. `close > Donchian_high(20).shift(1) + buffer`, `close > EMA(200)`, EMA slope up
+2. `ADX(14) >= adx_min`, ATR% band
+3. H4 trend agreement (same gate as fibonacci)
+
+No fixed TP; exits via the reverse Donchian channel or ATR stop.
+
+Daily-guard limits (consecutive losses, daily realized-loss cap) are enforced
+at the executor layer for both strategies and reset at UTC midnight. The H4
+frame is cached for 15 minutes per executor, so MT5 API load stays flat.
+
+## Backtesting the switch
+
+```bash
+# 1. dump history from MT5 (run on the Windows box; ~6 months of H1 bars)
+python scripts/dump_history.py --account 1 --months 6 config/fib_*.yaml
+
+# 2. compare donchian vs fibonacci on identical data
+python scripts/backtest_all.py                      # all data/*_h1.csv
+python scripts/backtest_all.py --config config/fib_xauusd.yaml data/xauusd_h1.csv
+```
+
+`backtest_all.py` prints trades / win% / profit factor / total PnL / max
+drawdown per symbol per strategy. Judge the fib parameters here **before**
+letting the live account trade them; tune `fibonacci:` fields in the YAMLs and
+re-run.
 
 ### Email notification
 

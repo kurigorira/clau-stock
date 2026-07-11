@@ -10,7 +10,7 @@ import pandas as pd
 from . import mt5_client, notify
 from .config import Config
 from .risk import position_volume
-from .strategy import add_indicators, evaluate_last_bar, should_exit
+from .strategy import add_indicators, evaluate_fib_entry, evaluate_last_bar, should_exit
 
 
 _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -89,7 +89,10 @@ class Executor:
         if h4_raw is not None and len(h4_raw) >= 2:
             data_h4 = add_indicators(h4_raw.iloc[:-1], self.cfg)
 
-        signal = evaluate_last_bar(data, self.cfg, data_h4)
+        if self.cfg.strategy == "fibonacci":
+            signal = evaluate_fib_entry(data, data_h4, self.cfg)
+        else:
+            signal = evaluate_last_bar(data, self.cfg, data_h4)
         positions = mt5_client.open_positions(
             self.cfg.symbol, self.cfg.execution.magic_number
         )
@@ -164,15 +167,17 @@ class Executor:
             return
 
         self.log.info(
-            f"entry side={signal.side} vol={volume} ref={signal.entry_ref} "
-            f"stop={signal.stop} atr={signal.atr:.3f} h4_trend={signal.h4_trend_dir}"
+            f"entry strategy={self.cfg.strategy} side={signal.side} vol={volume} "
+            f"ref={signal.entry_ref} stop={signal.stop} tp={signal.tp} "
+            f"atr={signal.atr:.3f} h4_trend={signal.h4_trend_dir} "
+            f"fib_level={signal.fib_level:.3f}"
         )
         order_result = mt5_client.market_order(
             symbol=self.cfg.symbol,
             side=signal.side,
             volume=volume,
             sl=signal.stop,
-            tp=None,
+            tp=signal.tp,
             magic=self.cfg.execution.magic_number,
             deviation=self.cfg.execution.deviation_points,
             comment=self.cfg.execution.comment,

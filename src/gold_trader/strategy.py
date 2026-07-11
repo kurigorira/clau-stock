@@ -19,6 +19,11 @@ class Signal:
     donch_high: float = 0.0
     donch_low: float = 0.0
     h4_trend_dir: int = 0   # +1 / -1 / 0
+    # Fibonacci-strategy fields. tp is None for donchian (no fixed target).
+    tp: Optional[float] = None
+    swing_high: float = 0.0
+    swing_low: float = 0.0
+    fib_level: float = 0.0  # retrace depth at entry (0.5 = the 50% level)
 
 
 def h4_trend_dir(df_h4: pd.DataFrame, cfg: Config) -> int:
@@ -94,6 +99,12 @@ def _adx(df: pd.DataFrame, length: int) -> pd.Series:
     return dx.ewm(alpha=1 / length, adjust=False).mean()
 
 
+def _macd_hist(close: pd.Series, fast: int, slow: int, signal: int) -> pd.Series:
+    macd_line = _ema(close, fast) - _ema(close, slow)
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    return macd_line - signal_line
+
+
 def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     out = df.copy()
     out["ema_trend"] = _ema(out["close"], cfg.trend.ema_length)
@@ -110,6 +121,9 @@ def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     out["donch_low"] = out["low"].rolling(n).min().shift(1)
     out["exit_high"] = out["high"].rolling(m).max().shift(1)
     out["exit_low"] = out["low"].rolling(m).min().shift(1)
+    fib = cfg.fibonacci
+    out["macd_hist"] = _macd_hist(out["close"], fib.macd_fast, fib.macd_slow, fib.macd_signal)
+    out["vol_sma"] = out["volume"].rolling(fib.vol_sma_length).mean().shift(1)
     return out
 
 
@@ -189,3 +203,129 @@ def should_exit(position_side: str, bar: pd.Series) -> bool:
         return not np.isnan(ref) and close < ref
     ref = float(bar["exit_high"])
     return not np.isnan(ref) and close > ref
+
+
+# ---------------------------------------------------------------------------
+# Fibonacci strategy (strategy: "fibonacci")
+# ---------------------------------------------------------------------------
+
+
+def swing_range(df_h4: pd.DataFrame, lookback: int) -> tuple[float, float]:
+    """High/low of the last `lookback` (closed) H4 bars."""
+    tail = df_h4.iloc[-lookback:]
+    return float(tail["high"].max()), float(tail["low"].min())
+
+
+def fib_zone(
+    swing_high: float,
+    swing_low: float,
+    direction: int,
+    retrace_min: float,
+    retrace_max: float,
+) -> tuple[float, float]:
+    """Price band of the retrace zone as (zone_low, zone_high).
+
+    direction +1: uptrend — the pullback zone hangs below the swing high.
+    direction -1: downtrend — the bounce zone sits above the swing low.
+    """
+    rng = swing_high - swing_low
+    if direction == 1:
+        return swing_high - retrace_max * rng, swing_high - retrace_min * rng
+    return swing_low + retrace_min * rng, swing_low + retrace_max * rng
+
+
+def evaluate_fib_entry(
+    df_h1: pd.DataFrame,
+    df_h4: Optional[pd.DataFrame],
+    cfg: Config,
+) -> Signal:
+    """Fibonacci pullback entry on the most recent *closed* H1 bar.
+
+    Long (short symmetric):
+      1. H4 trend dir == +1 (EMA slope up, H4 ADX >= adx_min)
+      2. H1 low or close inside the retrace_min..retrace_max zone of the
+         H4 swing (last swing_lookback closed H4 bars)
+      3. last `bounce_bars` H1 closes strictly rising
+      4. H1 volume >= vol_mult * SMA(volume) (vol_mult=0 disables)
+      5. MACD histogram rising vs previous bar (use_macd=false disables)
+      6. atr_pct sanity band from cfg.filters
+    SL beyond the swing extreme by stop_atr_buffer*ATR; TP at extension_tp.
+    """
+    fib = cfg.fibonacci
+    need_h1 = max(fib.bounce_bars + 1, fib.vol_sma_length + 1, fib.macd_slow + fib.macd_signal)
+    if df_h4 is None or len(df_h4) < fib.swing_lookback or len(df_h1) < need_h1:
+        return Signal(None, 0.0, 0.0, 0.0)
+
+    dir_h4 = h4_trend_dir(df_h4, cfg)
+    if dir_h4 == 0:
+        bar = df_h1.iloc[-1]
+        return Signal(None, 0.0, float(bar["close"]), float(bar["atr"]), h4_trend_dir=0)
+
+    swing_high, swing_low = swing_range(df_h4, fib.swing_lookback)
+    rng = swing_high - swing_low
+    bar = df_h1.iloc[-1]
+    close = float(bar["close"])
+    atr = float(bar["atr"])
+    atr_pct = float(bar["atr_pct"])
+    if rng <= 0 or np.isnan(atr) or np.isnan(atr_pct):
+        return Signal(None, 0.0, close, 0.0 if np.isnan(atr) else atr, h4_trend_dir=dir_h4)
+
+    no_trade = Signal(
+        None, 0.0, close, atr,
+        h4_trend_dir=dir_h4, swing_high=swing_high, swing_low=swing_low,
+    )
+
+    f = cfg.filters
+    if not (f.atr_pct_min <= atr_pct <= f.atr_pct_max):
+        return no_trade
+
+    zone_low, zone_high = fib_zone(
+        swing_high, swing_low, dir_h4, fib.retrace_min, fib.retrace_max
+    )
+    low = float(bar["low"])
+    high = float(bar["high"])
+    in_zone = (zone_low <= low <= zone_high) or (zone_low <= close <= zone_high) or (
+        zone_low <= high <= zone_high
+    )
+    if not in_zone:
+        return no_trade
+
+    closes = df_h1["close"].iloc[-(fib.bounce_bars + 1):].to_numpy(dtype=float)
+    diffs = np.diff(closes)
+    bounce = (diffs > 0).all() if dir_h4 == 1 else (diffs < 0).all()
+    if not bounce:
+        return no_trade
+
+    if fib.vol_mult > 0:
+        vol = float(bar["volume"])
+        vol_sma = float(bar["vol_sma"])
+        if np.isnan(vol_sma) or vol < fib.vol_mult * vol_sma:
+            return no_trade
+
+    if fib.use_macd:
+        hist_now = float(df_h1["macd_hist"].iloc[-1])
+        hist_prev = float(df_h1["macd_hist"].iloc[-2])
+        if np.isnan(hist_now) or np.isnan(hist_prev):
+            return no_trade
+        momentum_ok = hist_now > hist_prev if dir_h4 == 1 else hist_now < hist_prev
+        if not momentum_ok:
+            return no_trade
+
+    ext = fib.extension_tp - 1.0
+    if dir_h4 == 1:
+        stop = swing_low - fib.stop_atr_buffer * atr
+        tp = swing_high + ext * rng
+        fib_level = (swing_high - close) / rng
+        return Signal(
+            "buy", stop, close, atr,
+            h4_trend_dir=dir_h4, tp=tp,
+            swing_high=swing_high, swing_low=swing_low, fib_level=fib_level,
+        )
+    stop = swing_high + fib.stop_atr_buffer * atr
+    tp = swing_low - ext * rng
+    fib_level = (close - swing_low) / rng
+    return Signal(
+        "sell", stop, close, atr,
+        h4_trend_dir=dir_h4, tp=tp,
+        swing_high=swing_high, swing_low=swing_low, fib_level=fib_level,
+    )

@@ -67,6 +67,33 @@ class ExecutionConfig:
 
 
 @dataclass
+class FibonacciConfig:
+    """Parameters for strategy: "fibonacci" (retrace entry + extension TP).
+
+    The H4 swing is the high/low of the last `swing_lookback` closed H4 bars.
+    A long fires when H1 pulls back into the retrace_min..retrace_max zone of
+    that swing, closes higher `bounce_bars` times in a row, prints above-average
+    volume, and the MACD histogram is turning back up — all while the H4 trend
+    filter (EMA slope + ADX, shared with the donchian strategy) points up.
+    """
+    swing_lookback: int = 20
+    retrace_min: float = 0.382
+    retrace_max: float = 0.786
+    extension_tp: float = 1.618
+    bounce_bars: int = 2
+    vol_mult: float = 1.2          # 0 disables the volume filter
+    vol_sma_length: int = 20
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    use_macd: bool = True
+    stop_atr_buffer: float = 0.2   # SL sits this many ATRs beyond the swing
+
+
+_STRATEGY_NAMES = ("donchian", "fibonacci")
+
+
+@dataclass
 class NotifyConfig:
     # When enabled, signal entries trigger an email via Gmail SMTP. SMTP
     # credentials come from env vars (GMAIL_USER, GMAIL_APP_PASSWORD,
@@ -83,8 +110,10 @@ class NotifyConfig:
 class Config:
     symbol: str = "BTCUSD"
     timeframe: str = "H1"
+    strategy: str = "donchian"
     trend: TrendConfig = field(default_factory=TrendConfig)
     breakout: BreakoutConfig = field(default_factory=BreakoutConfig)
+    fibonacci: FibonacciConfig = field(default_factory=FibonacciConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     filters: FilterConfig = field(default_factory=FilterConfig)
     daily_guard: DailyGuardConfig = field(default_factory=DailyGuardConfig)
@@ -97,10 +126,28 @@ class Config:
             raise ValueError(
                 f"timeframe must be one of {_TIMEFRAME_NAMES}, got {self.timeframe}"
             )
+        if self.strategy not in _STRATEGY_NAMES:
+            raise ValueError(
+                f"strategy must be one of {_STRATEGY_NAMES}, got {self.strategy}"
+            )
         if self.trend.higher_timeframe and self.trend.higher_timeframe not in _TIMEFRAME_NAMES:
             raise ValueError(
                 f"trend.higher_timeframe must be one of {_TIMEFRAME_NAMES} or '' to disable,"
                 f" got {self.trend.higher_timeframe}"
+            )
+        if self.strategy == "fibonacci" and not self.trend.higher_timeframe:
+            raise ValueError(
+                "strategy 'fibonacci' needs trend.higher_timeframe (the swing/trend timeframe)"
+            )
+        f = self.fibonacci
+        if not (0.0 < f.retrace_min < f.retrace_max <= 1.0):
+            raise ValueError(
+                f"fibonacci retrace zone must satisfy 0 < min < max <= 1,"
+                f" got [{f.retrace_min}, {f.retrace_max}]"
+            )
+        if f.extension_tp <= 1.0:
+            raise ValueError(
+                f"fibonacci.extension_tp must be > 1.0, got {f.extension_tp}"
             )
 
     @classmethod
@@ -110,8 +157,10 @@ class Config:
         return cls(
             symbol=raw.get("symbol", "BTCUSD"),
             timeframe=raw.get("timeframe", "H1"),
+            strategy=raw.get("strategy", "donchian"),
             trend=TrendConfig(**(raw.get("trend") or {})),
             breakout=BreakoutConfig(**(raw.get("breakout") or {})),
+            fibonacci=FibonacciConfig(**(raw.get("fibonacci") or {})),
             risk=RiskConfig(**(raw.get("risk") or {})),
             filters=FilterConfig(**(raw.get("filters") or {})),
             daily_guard=DailyGuardConfig(**(raw.get("daily_guard") or {})),

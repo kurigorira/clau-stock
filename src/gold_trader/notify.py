@@ -74,18 +74,29 @@ def _build_message(
         f"symbol      : {symbol}\n"
         f"side        : {side}\n"
         f"account     : {account}\n"
+        f"strategy    : {cfg.strategy}\n"
         f"H4 trend    : {trend_label} (dir={signal.h4_trend_dir})\n"
         f"entry ref   : {signal.entry_ref}\n"
         f"fill price  : {fill_price}\n"
         f"volume      : {fill_volume}\n"
         f"stop loss   : {signal.stop}\n"
+        f"take profit : {signal.tp}\n"
         f"atr         : {signal.atr:.5f}\n"
-        f"donch high  : {signal.donch_high}\n"
-        f"donch low   : {signal.donch_low}\n"
         f"timeframe   : {cfg.timeframe} (higher={cfg.trend.higher_timeframe or 'OFF'})\n"
         f"magic       : {cfg.execution.magic_number}\n"
         f"ticket      : {ticket}\n"
     )
+    if cfg.strategy == "fibonacci":
+        body += (
+            f"swing high  : {signal.swing_high}\n"
+            f"swing low   : {signal.swing_low}\n"
+            f"fib level   : {signal.fib_level:.3f}\n"
+        )
+    else:
+        body += (
+            f"donch high  : {signal.donch_high}\n"
+            f"donch low   : {signal.donch_low}\n"
+        )
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = sender
