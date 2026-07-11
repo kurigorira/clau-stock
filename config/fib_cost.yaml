@@ -1,6 +1,5 @@
 # COST fibonacci retrace preset (non-tech stock, account 2).
-# UNTESTED: run scripts/dump_history.py + scripts/backtest_all.py on this
-# symbol and keep whichever strategy wins (or drop it) before going live.
+# strategy: fibonacci — won the 6-month backtest on this symbol.
 # Inherits all other defaults from src/gold_trader/config.py.
 symbol: COST
 timeframe: H1

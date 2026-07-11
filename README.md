@@ -24,16 +24,19 @@ Preset files are named `fib_<symbol>.yaml` regardless of the strategy inside
 | 1 | NZDUSD, USDCAD, XAUUSD, XAGUSD | donchian (PF 1.21 / 1.18 / 1.50 / 1.25) |
 | 2 | JPM, TSLA | fibonacci (PF 1.12 / 1.03) |
 | 2 | JPN225ft, AMD, MSFT, NFLX, NVIDIA, META | donchian (PF 1.27-3.72) |
-| 2 | JNJ PFE MRK UNH KO PEP MCD WMT PG COST HD NKE DIS V MA BAC GS CVX CAT GE | fibonacci — **UNTESTED**, gate them through dump+backtest |
+| 2 | CAT COST HD JNJ KO MA MCD NKE PEP PG WMT | fibonacci (PF 1.18-7.06) |
+| 2 | CVX, BAC, UNH | donchian (PF 2.37 / 1.16 / 1.66) |
 | 3 | EURUSD (`fib_eurusd_small.yaml`, live JPY 20k) | fibonacci (tight filters) |
 
-Crypto is deliberately BTC-only. Benched (in repo, not launched):
+Crypto is deliberately BTC-only. Non-tech stocks split cleanly the opposite
+way from tech: fibonacci won 11 of 14 there, while breakout (donchian) won
+5 of 7 tech names. Benched (in repo, not launched):
 - both strategies lost: AAPL, NVIDIA.24H, HK50.r, SP500ft.r, COPPER-Cr,
   AUDJPY, AUDUSD, CADJPY, CHFJPY, EURAUD, EURGBP, EURJPY, EURUSD(demo),
-  GBPJPY, USDJPY, ETH/ADA/LTC/XRP/SOL
+  GBPJPY, USDJPY, GE, GS, MRK, ETH/ADA/LTC/XRP/SOL
 - symbol name failed to dump (fix `symbol:` against MT5 Market Watch first):
-  GOOGL, AMZN, INTC, BA, XOM, UK-OIL, NG, XPTUSD, XPDUSD, NAS100ft, DJ30ft,
-  GER40ft, UK100ft, AUS200ft
+  GOOGL, AMZN, INTC, BA, XOM, DIS, PFE, V, UK-OIL, NG, XPTUSD, XPDUSD,
+  NAS100ft, DJ30ft, GER40ft, UK100ft, AUS200ft
 
 Symbols carried over from the original 13-instrument rollout keep their old
 magic_number, so open positions from the retired presets are adopted and exit

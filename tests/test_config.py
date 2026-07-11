@@ -88,6 +88,7 @@ def test_backtest_winners_run_donchian():
         "fib_xauusd.yaml", "fib_xagusd.yaml", "fib_jpn225ft.yaml",
         "fib_nzdusd.yaml", "fib_usdcad.yaml", "fib_amd.yaml",
         "fib_msft.yaml", "fib_nflx.yaml", "fib_nvidia.yaml", "fib_meta.yaml",
+        "fib_cvx.yaml", "fib_bac.yaml", "fib_unh.yaml",
     ]
     for name in donchian_winners:
         assert Config.from_yaml(config_dir / name).strategy == "donchian", name

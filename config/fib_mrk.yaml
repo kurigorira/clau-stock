@@ -1,6 +1,5 @@
 # MRK fibonacci retrace preset (non-tech stock, account 2).
-# UNTESTED: run scripts/dump_history.py + scripts/backtest_all.py on this
-# symbol and keep whichever strategy wins (or drop it) before going live.
+# BENCHED: both strategies lost the 6-month backtest; not launched.
 # Inherits all other defaults from src/gold_trader/config.py.
 symbol: MRK
 timeframe: H1
