@@ -1,10 +1,11 @@
 # XAUUSD fibonacci retrace preset (commodity, account 1).
-# Entry: H4 trend + fib 38.2-78.6% pullback + 2-bar bounce + volume + MACD.
-# TP at the 161.8% extension; SL beyond the H4 swing. See README "Fibonacci".
+# strategy: donchian — the 6-month backtest (scripts/backtest_all.py) showed
+# breakout beating the fib pullback on this symbol. File keeps its fib_ name
+# so start.bat and the magic_number stay stable.
 # Inherits all other defaults from src/gold_trader/config.py.
 symbol: XAUUSD
 timeframe: H1
-strategy: fibonacci
+strategy: donchian
 
 risk:
   per_trade_pct: 0.3

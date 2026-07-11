@@ -10,27 +10,35 @@ MT5 symbol can be added as a new YAML file.
 
 ## Built-in presets
 
-`start.bat` launches the **fibonacci** presets (`config/fib_*.yaml`, 50 symbols
-+ the account-3 small preset):
+The fleet was selected by a 6-month donchian-vs-fibonacci backtest
+(`scripts/backtest_all.py`): each launched symbol runs whichever strategy won
+on its own data, and symbols where **both** strategies lost are not launched.
+Preset files are named `fib_<symbol>.yaml` regardless of the strategy inside
+(historical; the file name keys the magic_number and start.bat entries).
 
-| account | class | symbols | magic range |
-|---|---|---|---|
-| 1 | FX (14) | EURUSD USDJPY GBPUSD AUDUSD NZDUSD USDCAD USDCHF EURJPY GBPJPY AUDJPY EURGBP EURAUD CADJPY CHFJPY | legacy + 20260701-12 |
-| 1 | metals/energy (8) | XAUUSD XAGUSD COPPER-Cr CL-OIL UK-OIL NG XPTUSD XPDUSD | legacy + 20260713-16 |
-| 1 | crypto (6) | BTCUSD ETHUSD XRPUSD SOLUSD LTCUSD ADAUSD | legacy + 20260717-21 |
-| 2 | indices (8) | SP500ft.r JPN225ft HK50.r NAS100ft DJ30ft GER40ft UK100ft AUS200ft | legacy + 20260722-26 |
-| 2 | stocks (14) | NVIDIA NVIDIA.24H TSLA AAPL MSFT GOOGL META AMZN NFLX AMD INTC JPM BA XOM | legacy + 20260727-38 |
-| 3 | live small (1) | EURUSD (`fib_eurusd_small.yaml`) | 20260523 |
+`start.bat` launches:
 
-Symbols carried over from the original 13-instrument rollout **keep their old
-magic_number**, so open positions from the retired donchian presets are adopted
-by the matching fib preset and exit through the shared safety exit. The 37 new
-symbols use fresh magics (20260701+). **Verify new symbol names against your
-MT5 Market Watch** — broker naming varies; fix the `symbol:` field on an
-`unknown symbol` error.
+| account | symbols | strategy |
+|---|---|---|
+| 1 | GBPUSD, USDCHF, CL-OIL, BTCUSD | fibonacci (PF 2.93 / 1.27 / 1.15 / 1.42) |
+| 1 | NZDUSD, USDCAD, XAUUSD, XAGUSD | donchian (PF 1.21 / 1.18 / 1.50 / 1.25) |
+| 2 | JPM, TSLA | fibonacci (PF 1.12 / 1.03) |
+| 2 | JPN225ft, AMD, MSFT, NFLX, NVIDIA, META | donchian (PF 1.27-3.72) |
+| 2 | JNJ PFE MRK UNH KO PEP MCD WMT PG COST HD NKE DIS V MA BAC GS CVX CAT GE | fibonacci — **UNTESTED**, gate them through dump+backtest |
+| 3 | EURUSD (`fib_eurusd_small.yaml`, live JPY 20k) | fibonacci (tight filters) |
 
-The retired donchian YAMLs (`config/eurusd.yaml` etc.) remain in the repo for
-reference and can still be launched manually or backtested.
+Crypto is deliberately BTC-only. Benched (in repo, not launched):
+- both strategies lost: AAPL, NVIDIA.24H, HK50.r, SP500ft.r, COPPER-Cr,
+  AUDJPY, AUDUSD, CADJPY, CHFJPY, EURAUD, EURGBP, EURJPY, EURUSD(demo),
+  GBPJPY, USDJPY, ETH/ADA/LTC/XRP/SOL
+- symbol name failed to dump (fix `symbol:` against MT5 Market Watch first):
+  GOOGL, AMZN, INTC, BA, XOM, UK-OIL, NG, XPTUSD, XPDUSD, NAS100ft, DJ30ft,
+  GER40ft, UK100ft, AUS200ft
+
+Symbols carried over from the original 13-instrument rollout keep their old
+magic_number, so open positions from the retired presets are adopted and exit
+through the shared safety exit. The retired donchian-era YAMLs
+(`config/eurusd.yaml` etc.) remain in the repo for reference.
 
 ### Legacy preset map (donchian era)
 

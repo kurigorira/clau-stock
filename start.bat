@@ -72,12 +72,15 @@ if not exist ".venv\Scripts\activate.bat" (
 REM ==== 4. Spawn 3 bot processes, one per account ====
 REM   python -u forces unbuffered stdout/stderr so log lines appear in the cmd
 REM   window immediately rather than waiting for the buffer to fill.
-REM   All presets run strategy=fibonacci. Legacy donchian YAMLs stay in config/
-REM   for reference but are no longer launched; open donchian positions are
-REM   adopted by the fib preset with the same magic_number and exit via the
-REM   shared Donchian reverse-channel safety exit.
-set "FIB_ACC1=config\fib_eurusd.yaml config\fib_usdjpy.yaml config\fib_gbpusd.yaml config\fib_audusd.yaml config\fib_nzdusd.yaml config\fib_usdcad.yaml config\fib_usdchf.yaml config\fib_eurjpy.yaml config\fib_gbpjpy.yaml config\fib_audjpy.yaml config\fib_eurgbp.yaml config\fib_euraud.yaml config\fib_cadjpy.yaml config\fib_chfjpy.yaml config\fib_xauusd.yaml config\fib_xagusd.yaml config\fib_copper_cr.yaml config\fib_cl_oil.yaml config\fib_uk_oil.yaml config\fib_ng.yaml config\fib_xptusd.yaml config\fib_xpdusd.yaml config\fib_btcusd.yaml config\fib_ethusd.yaml config\fib_xrpusd.yaml config\fib_solusd.yaml config\fib_ltcusd.yaml config\fib_adausd.yaml"
-set "FIB_ACC2=config\fib_sp500ft_r.yaml config\fib_jpn225ft.yaml config\fib_hk50_r.yaml config\fib_nas100ft.yaml config\fib_dj30ft.yaml config\fib_ger40ft.yaml config\fib_uk100ft.yaml config\fib_aus200ft.yaml config\fib_nvidia.yaml config\fib_nvidia_24h.yaml config\fib_tsla.yaml config\fib_aapl.yaml config\fib_msft.yaml config\fib_googl.yaml config\fib_meta.yaml config\fib_amzn.yaml config\fib_nflx.yaml config\fib_amd.yaml config\fib_intc.yaml config\fib_jpm.yaml config\fib_ba.yaml config\fib_xom.yaml"
+REM   Fleet selected by the 6-month backtest (scripts/backtest_all.py):
+REM   each preset runs whichever strategy (donchian/fibonacci) won on its
+REM   own data; symbols where both lost are not launched. Crypto is BTC-only
+REM   by design. The 20 non-tech stock presets are UNTESTED - dump+backtest
+REM   them before trusting the results. Symbols whose Vantage names failed
+REM   to dump (GOOGL/AMZN/INTC/BA/XOM/UK-OIL/NG/XPT/XPD/index futures) stay
+REM   out of the fleet until their symbol: fields are fixed.
+set "FIB_ACC1=config\fib_gbpusd.yaml config\fib_usdchf.yaml config\fib_nzdusd.yaml config\fib_usdcad.yaml config\fib_xauusd.yaml config\fib_xagusd.yaml config\fib_cl_oil.yaml config\fib_btcusd.yaml"
+set "FIB_ACC2=config\fib_jpn225ft.yaml config\fib_amd.yaml config\fib_msft.yaml config\fib_nflx.yaml config\fib_nvidia.yaml config\fib_meta.yaml config\fib_jpm.yaml config\fib_tsla.yaml config\fib_jnj.yaml config\fib_pfe.yaml config\fib_mrk.yaml config\fib_unh.yaml config\fib_ko.yaml config\fib_pep.yaml config\fib_mcd.yaml config\fib_wmt.yaml config\fib_pg.yaml config\fib_cost.yaml config\fib_hd.yaml config\fib_nke.yaml config\fib_dis.yaml config\fib_v.yaml config\fib_ma.yaml config\fib_bac.yaml config\fib_gs.yaml config\fib_cvx.yaml config\fib_cat.yaml config\fib_ge.yaml"
 
 start "clau-stock account 1" cmd /k "call .venv\Scripts\activate.bat && python -u scripts\run_live.py --account 1 %FIB_ACC1%"
 
@@ -89,10 +92,10 @@ REM Price-change alerts (independent of trading; binds to account 1's MT5 termin
 start "clau-stock alerts" cmd /k "call .venv\Scripts\activate.bat && python -u scripts\run_alerts.py --account 1 config\watchlist.yaml %FIB_ACC1% %FIB_ACC2%"
 
 echo.
-echo [start.bat] launched account 1 (28 symbols: FX 14 / metals+energy 8 / crypto 6)
-echo [start.bat] launched account 2 (22 symbols: indices 8 / stocks 14)
-echo [start.bat] launched account 3 (1 symbol:  EURUSD fib-small, LIVE JPY 20k)
-echo [start.bat] launched alerts   (50 symbols + watchlist.yaml extras)
+echo [start.bat] launched account 1 (8 symbols:  FX 4 / metals 2 / oil 1 / BTC)
+echo [start.bat] launched account 2 (28 symbols: JPN225 + 7 tested stocks + 20 non-tech UNTESTED)
+echo [start.bat] launched account 3 (1 symbol:   EURUSD fib-small, LIVE JPY 20k)
+echo [start.bat] launched alerts   (36 symbols + watchlist.yaml extras)
 echo Logs: logs\account1.log / logs\account2.log / logs\account3.log / logs\alerts1.log
 echo Close the bot windows or press Ctrl+C inside them to stop.
 echo.

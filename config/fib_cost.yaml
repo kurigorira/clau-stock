@@ -1,0 +1,28 @@
+# COST fibonacci retrace preset (non-tech stock, account 2).
+# UNTESTED: run scripts/dump_history.py + scripts/backtest_all.py on this
+# symbol and keep whichever strategy wins (or drop it) before going live.
+# Inherits all other defaults from src/gold_trader/config.py.
+symbol: COST
+timeframe: H1
+strategy: fibonacci
+
+risk:
+  per_trade_pct: 0.3
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  atr_pct_min: 0.001
+  atr_pct_max: 0.10
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260748
+  deviation_points: 30
+  comment: "fib_cost"
