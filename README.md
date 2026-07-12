@@ -20,13 +20,19 @@ Preset files are named `fib_<symbol>.yaml` regardless of the strategy inside
 
 | account | symbols | strategy |
 |---|---|---|
-| 1 | GBPUSD, USDCHF, CL-OIL, BTCUSD | fibonacci (PF 2.93 / 1.27 / 1.15 / 1.42) |
-| 1 | NZDUSD, USDCAD, XAUUSD, XAGUSD | donchian (PF 1.21 / 1.18 / 1.50 / 1.25) |
-| 2 | JPM, TSLA | fibonacci (PF 1.12 / 1.03) |
+| 1 | GBPUSD, USDCHF, CL-OIL, BTCUSD, NG-Cr | fibonacci (PF 2.93 / 1.27 / 1.15 / 1.42 / 3.07*) |
+| 1 | NZDUSD, USDCAD, XAUUSD, XAGUSD, XAUEUR | donchian (PF 1.21 / 1.18 / 1.50 / 1.25 / 1.58*) |
+| 2 | JPM, TSLA, META.24H, GOOG.24H | fibonacci (PF 1.12 / 1.03 / 1.25* / 1.09*) |
 | 2 | JPN225ft, AMD, MSFT, NFLX, NVIDIA, META | donchian (PF 1.27-3.72) |
 | 2 | CAT COST HD JNJ KO MA MCD NKE PEP PG WMT | fibonacci (PF 1.18-7.06) |
 | 2 | CVX, BAC, UNH, EXXON | donchian (PF 2.37 / 1.16 / 1.66 / 1.41) |
 | 3 | EURUSD (`fib_eurusd_small.yaml`, live JPY 20k) | fibonacci (tight filters) |
+
+*PF values marked with an asterisk are out-of-sample (test-segment) PF from
+the spread-aware screener; the rest are full-period PF from backtest_all
+runs that ignored spread. Of 32 screener passers only these 4 survived
+once real spread costs were charged — 5 major alts, exotic FX, wheat and
+three 24H stock CFDs all lost their edge to the spread.
 
 Crypto is deliberately BTC-only. Non-tech stocks split cleanly the opposite
 way from tech: fibonacci won 11 of 15 there, while breakout (donchian) won

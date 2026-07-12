@@ -72,7 +72,7 @@ def test_all_fib_presets_parse_and_have_unique_magics():
     # historical). All must parse and every magic_number must be unique.
     config_dir = Path(__file__).resolve().parents[1] / "config"
     presets = sorted(config_dir.glob("fib_*.yaml"))
-    assert len(presets) == 71  # 50 rollout + eurusd_small + 20 non-tech stocks
+    assert len(presets) == 75  # 50 rollout + eurusd_small + 20 non-tech + 4 screened
     magics: dict[int, str] = {}
     for p in presets:
         cfg = Config.from_yaml(p)
@@ -89,6 +89,7 @@ def test_backtest_winners_run_donchian():
         "fib_nzdusd.yaml", "fib_usdcad.yaml", "fib_amd.yaml",
         "fib_msft.yaml", "fib_nflx.yaml", "fib_nvidia.yaml", "fib_meta.yaml",
         "fib_cvx.yaml", "fib_bac.yaml", "fib_unh.yaml", "fib_exxon.yaml",
+        "fib_xaueur.yaml",
     ]
     for name in donchian_winners:
         assert Config.from_yaml(config_dir / name).strategy == "donchian", name
