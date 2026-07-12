@@ -10,7 +10,7 @@ import pandas as pd
 from . import mt5_client, notify
 from .config import Config
 from .risk import position_volume
-from .strategy import add_indicators, evaluate_fib_entry, evaluate_last_bar, should_exit
+from .strategy import _atr, add_indicators, evaluate_fib_entry, evaluate_last_bar, should_exit
 
 
 _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -66,6 +66,36 @@ class Executor:
         self._h4_cache_at = now
         return df
 
+    def _ensure_stop_losses(self, closed: pd.DataFrame) -> None:
+        """Attach an ATR-based stop to any of our positions missing one."""
+        positions = mt5_client.open_positions(
+            self.cfg.symbol, self.cfg.execution.magic_number
+        )
+        unprotected = [p for p in positions if not p.sl or p.sl <= 0]
+        if not unprotected:
+            return
+        atr = float(_atr(closed, self.cfg.risk.atr_length).iloc[-1])
+        close = float(closed["close"].iloc[-1])
+        if not (atr > 0):  # also False for NaN
+            self.log.warning(
+                f"{len(unprotected)} position(s) without SL but ATR unavailable; retrying next poll"
+            )
+            return
+        for p in unprotected:
+            side = "buy" if p.type == 0 else "sell"  # POSITION_TYPE_BUY = 0
+            stop = (
+                close - self.cfg.risk.atr_stop_mult * atr
+                if side == "buy"
+                else close + self.cfg.risk.atr_stop_mult * atr
+            )
+            self.log.warning(
+                f"position {p.ticket} ({side}) has NO stop-loss; attaching {stop:.5f}"
+            )
+            try:
+                mt5_client.modify_position_sl(p, stop)
+            except Exception as exc:  # noqa: BLE001
+                self.log.error(f"failed to attach SL to ticket {p.ticket}: {exc}")
+
     def step(self) -> None:
         now = datetime.now(timezone.utc)
         if not self._in_session(now):
@@ -76,6 +106,12 @@ class Executor:
             return
         # last row is the still-forming bar; evaluate the one before it
         closed = df.iloc[:-1]
+
+        # Stop-loss safety sweep: runs EVERY poll (not just on new bars) so a
+        # position that somehow lost its SL - manual edit, manual order on our
+        # magic, partial broker glitch - is re-protected within poll_seconds.
+        self._ensure_stop_losses(closed)
+
         bar_time = closed.index[-1]
         if self._last_bar_time == bar_time:
             return

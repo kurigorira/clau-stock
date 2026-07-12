@@ -209,6 +209,21 @@ def market_order(
     return {"ticket": result.order, "price": result.price, "volume": result.volume}
 
 
+def modify_position_sl(position, sl: float) -> None:
+    """Attach or move a position's stop-loss (keeps its TP untouched)."""
+    mt5 = _mt5()
+    request = {
+        "action": mt5.TRADE_ACTION_SLTP,
+        "position": position.ticket,
+        "symbol": position.symbol,
+        "sl": sl,
+        "tp": position.tp,
+    }
+    result = mt5.order_send(request)
+    if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+        raise RuntimeError(f"sl modify failed: {result}")
+
+
 def close_position(position, deviation: int, comment: str) -> None:
     mt5 = _mt5()
     closing_side = "sell" if position.type == mt5.POSITION_TYPE_BUY else "buy"
