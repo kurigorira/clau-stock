@@ -1,8 +1,8 @@
-# Pfizer fibonacci retrace preset (non-tech stock, account 2).
+# PFIZER fibonacci retrace preset (non-tech stock, account 2).
 # UNTESTED: run scripts/dump_history.py + scripts/backtest_all.py on this
 # symbol and keep whichever strategy wins (or drop it) before going live.
 # Inherits all other defaults from src/gold_trader/config.py.
-symbol: Pfizer
+symbol: PFIZER
 timeframe: H1
 strategy: fibonacci
 

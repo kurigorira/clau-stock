@@ -35,7 +35,7 @@ way from tech: fibonacci won 11 of 14 there, while breakout (donchian) won
   AUDJPY, AUDUSD, CADJPY, CHFJPY, EURAUD, EURGBP, EURJPY, EURUSD(demo),
   GBPJPY, USDJPY, GE, GS, MRK, ETH/ADA/LTC/XRP/SOL
 - awaiting their dump+backtest gate (names fixed to Vantage's spelling):
-  DISNEY (`fib_dis.yaml`), Pfizer (`fib_pfe.yaml`), VISA (`fib_v.yaml`),
+  DISNEY (`fib_dis.yaml`), PFIZER (`fib_pfe.yaml`), VISA (`fib_v.yaml`),
   GOOG (`fib_googl.yaml`), AMAZON (`fib_amzn.yaml`), INTEL (`fib_intc.yaml`),
   BOEING (`fib_ba.yaml`), EXXON (`fib_xom.yaml`)
 - symbol name failed to dump (fix `symbol:` against MT5 Market Watch first):
