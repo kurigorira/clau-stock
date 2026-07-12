@@ -13,6 +13,7 @@ Guardrails against data-mining luck:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -55,6 +56,32 @@ def existing_symbols(config_dir: str | Path) -> set[str]:
     """
     symbols: set[str] = set()
     for p in Path(config_dir).glob("*.yaml"):
+        try:
+            raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        sym = raw.get("symbol")
+        if isinstance(sym, str) and sym:
+            symbols.add(sym)
+    return symbols
+
+
+def launched_symbols(repo_root: str | Path) -> set[str]:
+    """Symbols actually launched by start.bat (the live fleet).
+
+    Parses the preset paths out of start.bat and reads each file's symbol.
+    Distinct from existing_symbols(), which also includes benched presets.
+    """
+    root = Path(repo_root)
+    bat = root / "start.bat"
+    if not bat.exists():
+        return set()
+    names = set(re.findall(r"config\\((?:fib|candidate)_[a-z0-9_.]+\.yaml)", bat.read_text(encoding="utf-8")))
+    symbols: set[str] = set()
+    for name in names:
+        p = root / "config" / name
+        if not p.exists():
+            continue
         try:
             raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError:

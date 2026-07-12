@@ -36,7 +36,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect, timeframe  # noqa: E402
-from gold_trader.screener import existing_symbols, passes_gate, score_symbol  # noqa: E402
+from gold_trader.notify import _send_via_gmail  # noqa: E402
+from gold_trader.screener import (  # noqa: E402
+    existing_symbols,
+    launched_symbols,
+    passes_gate,
+    score_symbol,
+)
 
 
 CANDIDATE_TEMPLATE = """\
@@ -92,6 +98,9 @@ def main() -> None:
     parser.add_argument("--symbols", nargs="*", default=[],
                         help="scan exactly these symbols (bypasses --groups AND the "
                              "settled-symbol filter; use to re-validate candidates)")
+    parser.add_argument("--email", action="store_true",
+                        help="email the report via Gmail (GMAIL_USER / "
+                             "GMAIL_APP_PASSWORD / NOTIFY_TO in .env)")
     args = parser.parse_args()
 
     load_dotenv()
@@ -112,7 +121,10 @@ def main() -> None:
     cfg.filters.atr_pct_max = 0.10     # does the real gatekeeping
 
     date_from = datetime.now(timezone.utc) - timedelta(days=args.months * 31)
+    repo_root = Path(__file__).resolve().parents[1]
+    fleet = launched_symbols(repo_root)
     passers = []
+    fleet_failers = []  # fleet symbols scanned that did NOT clear the gate
     scanned = 0
 
     with connect(creds) as mt5:
@@ -200,34 +212,70 @@ def main() -> None:
                     best = score
             if best is not None:
                 passers.append((result, best))
+                tag = " [FLEET]" if sym in fleet else ""
                 print(
-                    f"  PASS {sym}: {best.strategy} "
+                    f"  PASS {sym}:{tag} {best.strategy} "
                     f"train PF {best.train_pf:.2f} (n={best.train_n}) / "
                     f"test PF {best.test_pf:.2f} (n={best.test_n}) "
-                    f"spread={info.spread}pt",
+                    f"spread={spread_pts:.0f}pt",
+                    flush=True,
+                )
+            elif sym in fleet:
+                least_bad = max(result.scores, key=lambda s: s.test_pf)
+                fleet_failers.append((result, least_bad))
+                print(
+                    f"  FAIL {sym}: [FLEET] best was {least_bad.strategy} "
+                    f"train PF {least_bad.train_pf:.2f} (n={least_bad.train_n}) / "
+                    f"test PF {least_bad.test_pf:.2f} (n={least_bad.test_n})",
                     flush=True,
                 )
             if i % 25 == 0:
                 print(f"  ... {i}/{len(tradeable)} scanned, {len(passers)} passers", flush=True)
 
-    print()
+    report: list[str] = []
     passers.sort(key=lambda rb: rb[1].test_pf, reverse=True)
     if args.top and len(passers) > args.top:
-        print(f"keeping top {args.top} of {len(passers)} passers by test PF")
+        report.append(f"keeping top {args.top} of {len(passers)} passers by test PF")
         passers = passers[: args.top]
     hdr = (
-        f"{'symbol':<20} | {'strategy':<9} | {'trainPF':>7} | {'n':>4} | "
+        f"{'symbol':<20} | {'status':<7} | {'strategy':<9} | {'trainPF':>7} | {'n':>4} | "
         f"{'testPF':>7} | {'n':>4} | {'spread':>6}"
     )
-    print(hdr)
-    print("-" * len(hdr))
+    report.append(hdr)
+    report.append("-" * len(hdr))
     for result, best in passers:
-        print(
-            f"{result.symbol:<20} | {best.strategy:<9} | {best.train_pf:>7.2f} | "
+        status = "FLEET" if result.symbol in fleet else "new"
+        report.append(
+            f"{result.symbol:<20} | {status:<7} | {best.strategy:<9} | {best.train_pf:>7.2f} | "
             f"{best.train_n:>4} | {best.test_pf:>7.2f} | {best.test_n:>4} | "
             f"{result.spread_points:>6.0f}"
         )
-    print(f"\n{scanned} symbols scanned, {len(passers)} passed the gate")
+    if fleet_failers:
+        report.append("")
+        report.append("FLEET symbols that FAILED the gate (consider removing / re-tuning):")
+        for result, least_bad in sorted(fleet_failers, key=lambda rb: rb[1].test_pf):
+            report.append(
+                f"{result.symbol:<20} | REVIEW  | {least_bad.strategy:<9} | "
+                f"{least_bad.train_pf:>7.2f} | {least_bad.train_n:>4} | "
+                f"{least_bad.test_pf:>7.2f} | {least_bad.test_n:>4} | "
+                f"{result.spread_points:>6.0f}"
+            )
+    report.append("")
+    report.append(f"{scanned} symbols scanned, {len(passers)} passed the gate")
+    body = "\n".join(report)
+    print()
+    print(body)
+
+    if args.email:
+        import logging
+
+        n_new = sum(1 for r, _ in passers if r.symbol not in fleet)
+        subject = (
+            f"[clau-stock review] {len(passers)} passers ({n_new} new), "
+            f"{len(fleet_failers)} fleet reviews ({args.months}mo scan)"
+        )
+        sent = _send_via_gmail(subject, body, logging.getLogger("screener"))
+        print("email sent" if sent else "email NOT sent (check GMAIL_* env vars)")
 
     if args.emit_configs and passers:
         out_dir = Path(__file__).resolve().parents[1] / "config"

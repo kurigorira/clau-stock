@@ -175,6 +175,28 @@ treat candidates as a shortlist: sanity-check spreads/session hours, then
 add the ones you trust to `start.bat`. Expect a full catalog scan to take
 tens of minutes; `--groups`/`--limit` narrow it down.
 
+## Scheduled monthly fleet review
+
+`scripts/review_fleet.bat` rescans the **entire catalog over 12 months**
+(fleet included via `--include-existing`) with spread-aware slippage and
+**emails the report** to `NOTIFY_TO`. The report separates:
+- `FLEET` / `new` passers — symbols that clear the gate right now
+- `REVIEW` rows — current fleet members that FAILED the gate (candidates
+  for removal or re-tuning)
+
+Register it with Windows Task Scheduler (first Wednesday of each month,
+20:00 — markets open, spreads normal, MT5 already running):
+
+```bat
+schtasks /Create /TN "clau-stock monthly review" ^
+  /TR "C:\path\to\clau-stock\scripts\review_fleet.bat" ^
+  /SC MONTHLY /MO FIRST /D WED /ST 20:00
+```
+
+A 12-month full-catalog scan takes a few hours; it runs unattended and
+appends progress to `logs\review.log`. The email is a report, not an
+action — fleet changes remain a manual decision.
+
 ### Email notification
 
 When an entry is filled, the executor sends a one-line summary email via

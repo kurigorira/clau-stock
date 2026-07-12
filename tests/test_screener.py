@@ -11,6 +11,7 @@ from gold_trader.config import Config  # noqa: E402
 from gold_trader.screener import (  # noqa: E402
     StrategyScore,
     existing_symbols,
+    launched_symbols,
     passes_gate,
     score_symbol,
     split_frame,
@@ -101,6 +102,21 @@ def test_existing_symbols_covers_real_config_dir():
     # fleet + benched symbols must be treated as settled
     for expected in ("XAUUSD", "BTCUSD", "GBPUSD", "EXXON", "GOOG", "PFIZER"):
         assert expected in syms
+
+
+def test_launched_symbols_reflects_start_bat():
+    repo_root = Path(__file__).resolve().parents[1]
+    fleet = launched_symbols(repo_root)
+    # launched fleet members
+    for expected in ("XAUUSD", "BTCUSD", "NG-Cr", "XAUEUR", "META.24H", "EURUSD"):
+        assert expected in fleet, expected
+    # benched presets exist in config/ but are NOT in start.bat
+    for benched in ("GOOG", "PFIZER", "AAPL", "TRUMPUSD"):
+        assert benched not in fleet, benched
+
+
+def test_launched_symbols_missing_bat_returns_empty(tmp_path):
+    assert launched_symbols(tmp_path) == set()
 
 
 def test_score_symbol_split_respected():
