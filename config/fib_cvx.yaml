@@ -1,3 +1,5 @@
+# BENCHED (12-month review): failed the spread-aware gate on both
+# segments; removed from start.bat.
 # CVX fibonacci retrace preset (non-tech stock, account 2).
 # strategy: donchian — won the 6-month backtest on this symbol.
 # Inherits all other defaults from src/gold_trader/config.py.

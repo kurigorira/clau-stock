@@ -72,7 +72,7 @@ def test_all_fib_presets_parse_and_have_unique_magics():
     # historical). All must parse and every magic_number must be unique.
     config_dir = Path(__file__).resolve().parents[1] / "config"
     presets = sorted(config_dir.glob("fib_*.yaml"))
-    assert len(presets) == 75  # 50 rollout + eurusd_small + 20 non-tech + 4 screened
+    assert len(presets) == 83  # 50 rollout + eurusd_small + 20 non-tech + 4 + 8 screened
     magics: dict[int, str] = {}
     for p in presets:
         cfg = Config.from_yaml(p)

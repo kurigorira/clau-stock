@@ -66,18 +66,25 @@ def existing_symbols(config_dir: str | Path) -> set[str]:
     return symbols
 
 
-def launched_symbols(repo_root: str | Path) -> set[str]:
-    """Symbols actually launched by start.bat (the live fleet).
+def launched_strategies(repo_root: str | Path) -> dict[str, str]:
+    """symbol -> strategy for every preset start.bat actually launches.
 
-    Parses the preset paths out of start.bat and reads each file's symbol.
-    Distinct from existing_symbols(), which also includes benched presets.
+    Parses the preset paths out of start.bat and reads each file. Distinct
+    from existing_symbols(), which also includes benched presets. Lines
+    commented out with REM are ignored (paused presets are not launched).
     """
     root = Path(repo_root)
     bat = root / "start.bat"
     if not bat.exists():
-        return set()
-    names = set(re.findall(r"config\\((?:fib|candidate)_[a-z0-9_.]+\.yaml)", bat.read_text(encoding="utf-8")))
-    symbols: set[str] = set()
+        return {}
+    active_lines = [
+        line for line in bat.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().lower().startswith("rem")
+    ]
+    names = set(
+        re.findall(r"config\\((?:fib|candidate)_[a-z0-9_.]+\.yaml)", "\n".join(active_lines))
+    )
+    out: dict[str, str] = {}
     for name in names:
         p = root / "config" / name
         if not p.exists():
@@ -88,8 +95,13 @@ def launched_symbols(repo_root: str | Path) -> set[str]:
             continue
         sym = raw.get("symbol")
         if isinstance(sym, str) and sym:
-            symbols.add(sym)
-    return symbols
+            out[sym] = raw.get("strategy", "donchian")
+    return out
+
+
+def launched_symbols(repo_root: str | Path) -> set[str]:
+    """Symbols actually launched by start.bat (the live fleet)."""
+    return set(launched_strategies(repo_root))
 
 
 def profit_factor(trades) -> float:

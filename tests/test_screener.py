@@ -107,12 +107,26 @@ def test_existing_symbols_covers_real_config_dir():
 def test_launched_symbols_reflects_start_bat():
     repo_root = Path(__file__).resolve().parents[1]
     fleet = launched_symbols(repo_root)
-    # launched fleet members
-    for expected in ("XAUUSD", "BTCUSD", "NG-Cr", "XAUEUR", "META.24H", "EURUSD"):
+    # launched fleet members (post 12-month review)
+    for expected in ("XAUUSD", "BTCUSD", "NG-Cr", "XAUEUR", "META.24H",
+                     "ORCL", "TOYOTA", "Cocoa-Cr"):
         assert expected in fleet, expected
     # benched presets exist in config/ but are NOT in start.bat
-    for benched in ("GOOG", "PFIZER", "AAPL", "TRUMPUSD"):
+    for benched in ("GOOG", "PFIZER", "AAPL", "JPM", "CL-OIL", "TSLA"):
         assert benched not in fleet, benched
+    # acc3 (live) is paused via REM - its preset must not count as launched
+    assert "EURUSD" not in fleet
+
+
+def test_launched_strategies_maps_symbol_to_strategy():
+    from gold_trader.screener import launched_strategies
+
+    repo_root = Path(__file__).resolve().parents[1]
+    strats = launched_strategies(repo_root)
+    assert strats["XAUUSD"] == "donchian"
+    assert strats["BTCUSD"] == "fibonacci"
+    assert strats["META.24H"] == "fibonacci"
+    assert strats["ORCL"] == "donchian"
 
 
 def test_launched_symbols_missing_bat_returns_empty(tmp_path):

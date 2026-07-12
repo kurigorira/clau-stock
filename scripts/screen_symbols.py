@@ -39,7 +39,7 @@ from gold_trader.mt5_client import MT5Credentials, connect, timeframe  # noqa: E
 from gold_trader.notify import _send_via_gmail  # noqa: E402
 from gold_trader.screener import (  # noqa: E402
     existing_symbols,
-    launched_symbols,
+    launched_strategies,
     passes_gate,
     score_symbol,
 )
@@ -122,7 +122,8 @@ def main() -> None:
 
     date_from = datetime.now(timezone.utc) - timedelta(days=args.months * 31)
     repo_root = Path(__file__).resolve().parents[1]
-    fleet = launched_symbols(repo_root)
+    fleet_strats = launched_strategies(repo_root)
+    fleet = set(fleet_strats)
     passers = []
     fleet_failers = []  # fleet symbols scanned that did NOT clear the gate
     scanned = 0
@@ -221,12 +222,17 @@ def main() -> None:
                     flush=True,
                 )
             elif sym in fleet:
-                least_bad = max(result.scores, key=lambda s: s.test_pf)
-                fleet_failers.append((result, least_bad))
+                # report the numbers of the strategy the fleet actually runs,
+                # not whichever strategy happened to score best
+                running = next(
+                    (s for s in result.scores if s.strategy == fleet_strats[sym]),
+                    max(result.scores, key=lambda s: s.test_pf),
+                )
+                fleet_failers.append((result, running))
                 print(
-                    f"  FAIL {sym}: [FLEET] best was {least_bad.strategy} "
-                    f"train PF {least_bad.train_pf:.2f} (n={least_bad.train_n}) / "
-                    f"test PF {least_bad.test_pf:.2f} (n={least_bad.test_n})",
+                    f"  FAIL {sym}: [FLEET runs {running.strategy}] "
+                    f"train PF {running.train_pf:.2f} (n={running.train_n}) / "
+                    f"test PF {running.test_pf:.2f} (n={running.test_n})",
                     flush=True,
                 )
             if i % 25 == 0:
@@ -245,19 +251,23 @@ def main() -> None:
     report.append("-" * len(hdr))
     for result, best in passers:
         status = "FLEET" if result.symbol in fleet else "new"
+        note = ""
+        if result.symbol in fleet and best.strategy != fleet_strats[result.symbol]:
+            note = f"  <- passed as {best.strategy}, fleet runs {fleet_strats[result.symbol]}"
         report.append(
             f"{result.symbol:<20} | {status:<7} | {best.strategy:<9} | {best.train_pf:>7.2f} | "
             f"{best.train_n:>4} | {best.test_pf:>7.2f} | {best.test_n:>4} | "
-            f"{result.spread_points:>6.0f}"
+            f"{result.spread_points:>6.0f}{note}"
         )
     if fleet_failers:
         report.append("")
-        report.append("FLEET symbols that FAILED the gate (consider removing / re-tuning):")
-        for result, least_bad in sorted(fleet_failers, key=lambda rb: rb[1].test_pf):
+        report.append("FLEET symbols that FAILED the gate, shown with the strategy they run")
+        report.append("(consider removing / re-tuning):")
+        for result, running in sorted(fleet_failers, key=lambda rb: rb[1].test_pf):
             report.append(
-                f"{result.symbol:<20} | REVIEW  | {least_bad.strategy:<9} | "
-                f"{least_bad.train_pf:>7.2f} | {least_bad.train_n:>4} | "
-                f"{least_bad.test_pf:>7.2f} | {least_bad.test_n:>4} | "
+                f"{result.symbol:<20} | REVIEW  | {running.strategy:<9} | "
+                f"{running.train_pf:>7.2f} | {running.train_n:>4} | "
+                f"{running.test_pf:>7.2f} | {running.test_n:>4} | "
                 f"{result.spread_points:>6.0f}"
             )
     report.append("")
