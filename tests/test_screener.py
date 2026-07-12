@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.screener import (  # noqa: E402
     StrategyScore,
+    existing_symbols,
     passes_gate,
     score_symbol,
     split_frame,
@@ -83,6 +84,23 @@ def test_score_symbol_returns_both_strategies():
     assert result.symbol == "TEST"
     assert {s.strategy for s in result.scores} == {"donchian", "fibonacci"}
     assert result.spread_points == 20.0
+
+
+def test_existing_symbols_collects_symbol_fields(tmp_path):
+    (tmp_path / "fib_xauusd.yaml").write_text("symbol: XAUUSD\n", encoding="utf-8")
+    (tmp_path / "legacy.yaml").write_text("symbol: EURUSD\ntimeframe: H1\n", encoding="utf-8")
+    (tmp_path / "watchlist.yaml").write_text("extra_symbols: [GOOG]\n", encoding="utf-8")
+    (tmp_path / "broken.yaml").write_text(":\n  - not: [valid", encoding="utf-8")
+    syms = existing_symbols(tmp_path)
+    assert syms == {"XAUUSD", "EURUSD"}  # no symbol key / broken files skipped
+
+
+def test_existing_symbols_covers_real_config_dir():
+    config_dir = Path(__file__).resolve().parents[1] / "config"
+    syms = existing_symbols(config_dir)
+    # fleet + benched symbols must be treated as settled
+    for expected in ("XAUUSD", "BTCUSD", "GBPUSD", "EXXON", "GOOG", "PFIZER"):
+        assert expected in syms
 
 
 def test_score_symbol_split_respected():

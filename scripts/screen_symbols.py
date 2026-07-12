@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect, timeframe  # noqa: E402
-from gold_trader.screener import passes_gate, score_symbol  # noqa: E402
+from gold_trader.screener import existing_symbols, passes_gate, score_symbol  # noqa: E402
 
 
 CANDIDATE_TEMPLATE = """\
@@ -80,6 +80,11 @@ def main() -> None:
     parser.add_argument("--min-test-pf", type=float, default=1.0)
     parser.add_argument("--min-bars", type=int, default=1500, help="skip thin histories")
     parser.add_argument("--limit", type=int, default=0, help="stop after N symbols (0 = all)")
+    parser.add_argument("--top", type=int, default=0,
+                        help="keep only the N best passers by test PF (0 = all)")
+    parser.add_argument("--include-existing", action="store_true",
+                        help="also scan symbols that already have a preset in config/ "
+                             "(default: skip them - the fleet and benched symbols are settled)")
     parser.add_argument("--emit-configs", action="store_true",
                         help="write config/candidate_<slug>.yaml for each passer")
     parser.add_argument("--magic-base", type=int, default=20260800,
@@ -113,17 +118,25 @@ def main() -> None:
         symbols = []
         for pattern in args.groups.split(","):
             symbols.extend(mt5.symbols_get(group=pattern.strip()) or [])
-        # dedupe, tradeable only
+        settled = set() if args.include_existing else existing_symbols(
+            Path(__file__).resolve().parents[1] / "config"
+        )
+        # dedupe, tradeable only, skip already-settled symbols
         seen = set()
         tradeable = []
+        skipped_settled = 0
         for s in symbols:
             if s.name in seen:
                 continue
             seen.add(s.name)
+            if s.name in settled:
+                skipped_settled += 1
+                continue
             if s.trade_mode == mt5.SYMBOL_TRADE_MODE_FULL:
                 tradeable.append(s)
         print(f"scanning {len(tradeable)} tradeable symbols "
-              f"(groups={args.groups}, {args.months} months, split={args.split})",
+              f"({skipped_settled} already settled in config/ skipped; "
+              f"groups={args.groups}, {args.months} months, split={args.split})",
               flush=True)
 
         for i, info in enumerate(tradeable, 1):
@@ -175,13 +188,16 @@ def main() -> None:
                 print(f"  ... {i}/{len(tradeable)} scanned, {len(passers)} passers", flush=True)
 
     print()
+    passers.sort(key=lambda rb: rb[1].test_pf, reverse=True)
+    if args.top and len(passers) > args.top:
+        print(f"keeping top {args.top} of {len(passers)} passers by test PF")
+        passers = passers[: args.top]
     hdr = (
         f"{'symbol':<20} | {'strategy':<9} | {'trainPF':>7} | {'n':>4} | "
         f"{'testPF':>7} | {'n':>4} | {'spread':>6}"
     )
     print(hdr)
     print("-" * len(hdr))
-    passers.sort(key=lambda rb: rb[1].test_pf, reverse=True)
     for result, best in passers:
         print(
             f"{result.symbol:<20} | {best.strategy:<9} | {best.train_pf:>7.2f} | "

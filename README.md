@@ -154,6 +154,16 @@ gate on both segments (defaults: train PF >= 1.2 with >= 10 trades, test
 PF >= 1.0 with >= 4 trades). `--emit-configs` writes
 `config/candidate_<slug>.yaml` stubs for the passers.
 
+Symbols that already have a preset in `config/` (the launched fleet plus
+everything previously benched) are **skipped by default** so the scan only
+surfaces genuinely new instruments; `--include-existing` re-scans them.
+`--top N` keeps the N best passers by out-of-sample PF — e.g. growing the
+fleet by a fixed batch:
+
+```bash
+python scripts/screen_symbols.py --account 1 --months 6 --top 32 --emit-configs
+```
+
 Screening hundreds of symbols will always surface a few lucky survivors, so
 treat candidates as a shortlist: sanity-check spreads/session hours, then
 add the ones you trust to `start.bat`. Expect a full catalog scan to take

@@ -14,8 +14,10 @@ Guardrails against data-mining luck:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from .backtest import run_backtest
 from .config import Config
@@ -41,6 +43,26 @@ class ScreenResult:
     def best(self) -> StrategyScore | None:
         passing = [s for s in self.scores if s.test_pf > 0]
         return max(passing, key=lambda s: s.test_pf) if passing else None
+
+
+def existing_symbols(config_dir: str | Path) -> set[str]:
+    """Every `symbol:` already claimed by a preset in config/.
+
+    Covers the launched fleet, benched presets and legacy YAMLs alike — a
+    symbol that has ever been through the gate shouldn't resurface as a
+    "new" candidate. Files without a symbol key (e.g. watchlist.yaml) are
+    ignored.
+    """
+    symbols: set[str] = set()
+    for p in Path(config_dir).glob("*.yaml"):
+        try:
+            raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        sym = raw.get("symbol")
+        if isinstance(sym, str) and sym:
+            symbols.add(sym)
+    return symbols
 
 
 def profit_factor(trades) -> float:
