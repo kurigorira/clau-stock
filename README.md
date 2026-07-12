@@ -35,10 +35,11 @@ way from tech: fibonacci won 11 of 14 there, while breakout (donchian) won
   AUDJPY, AUDUSD, CADJPY, CHFJPY, EURAUD, EURGBP, EURJPY, EURUSD(demo),
   GBPJPY, USDJPY, GE, GS, MRK, ETH/ADA/LTC/XRP/SOL
 - awaiting their dump+backtest gate (names fixed to Vantage's spelling):
-  DISNEY (`fib_dis.yaml`), Pfizer (`fib_pfe.yaml`), VISA (`fib_v.yaml`)
+  DISNEY (`fib_dis.yaml`), Pfizer (`fib_pfe.yaml`), VISA (`fib_v.yaml`),
+  GOOG (`fib_googl.yaml`), AMAZON (`fib_amzn.yaml`), INTEL (`fib_intc.yaml`),
+  BOEING (`fib_ba.yaml`), EXXON (`fib_xom.yaml`)
 - symbol name failed to dump (fix `symbol:` against MT5 Market Watch first):
-  GOOGL, AMZN, INTC, BA, XOM, UK-OIL, NG, XPTUSD, XPDUSD,
-  NAS100ft, DJ30ft, GER40ft, UK100ft, AUS200ft
+  UK-OIL, NG, XPTUSD, XPDUSD, NAS100ft, DJ30ft, GER40ft, UK100ft, AUS200ft
 
 Symbols carried over from the original 13-instrument rollout keep their old
 magic_number, so open positions from the retired presets are adopted and exit

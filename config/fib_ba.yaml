@@ -1,8 +1,8 @@
-# BA fibonacci retrace preset (stock, account 2).
+# BOEING fibonacci retrace preset (stock, account 2).
 # Entry: H4 trend + fib 38.2-78.6% pullback + 2-bar bounce + volume + MACD.
 # TP at the 161.8% extension; SL beyond the H4 swing. See README "Fibonacci".
 # Inherits all other defaults from src/gold_trader/config.py.
-symbol: BA
+symbol: BOEING
 timeframe: H1
 strategy: fibonacci
 
