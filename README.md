@@ -25,19 +25,17 @@ Preset files are named `fib_<symbol>.yaml` regardless of the strategy inside
 | 2 | JPM, TSLA | fibonacci (PF 1.12 / 1.03) |
 | 2 | JPN225ft, AMD, MSFT, NFLX, NVIDIA, META | donchian (PF 1.27-3.72) |
 | 2 | CAT COST HD JNJ KO MA MCD NKE PEP PG WMT | fibonacci (PF 1.18-7.06) |
-| 2 | CVX, BAC, UNH | donchian (PF 2.37 / 1.16 / 1.66) |
+| 2 | CVX, BAC, UNH, EXXON | donchian (PF 2.37 / 1.16 / 1.66 / 1.41) |
 | 3 | EURUSD (`fib_eurusd_small.yaml`, live JPY 20k) | fibonacci (tight filters) |
 
 Crypto is deliberately BTC-only. Non-tech stocks split cleanly the opposite
-way from tech: fibonacci won 11 of 14 there, while breakout (donchian) won
+way from tech: fibonacci won 11 of 15 there, while breakout (donchian) won
 5 of 7 tech names. Benched (in repo, not launched):
-- both strategies lost: AAPL, NVIDIA.24H, HK50.r, SP500ft.r, COPPER-Cr,
-  AUDJPY, AUDUSD, CADJPY, CHFJPY, EURAUD, EURGBP, EURJPY, EURUSD(demo),
-  GBPJPY, USDJPY, GE, GS, MRK, ETH/ADA/LTC/XRP/SOL
-- awaiting their dump+backtest gate (names fixed to Vantage's spelling):
-  DISNEY (`fib_disney.yaml`), PFIZER (`fib_pfizer.yaml`), VISA (`fib_visa.yaml`),
-  GOOG (`fib_goog.yaml`), AMAZON (`fib_amazon.yaml`), INTEL (`fib_intel.yaml`),
-  BOEING (`fib_boeing.yaml`), EXXON (`fib_exxon.yaml`)
+- both strategies lost, or the winner was too marginal / too few trades to
+  trust: AAPL, NVIDIA.24H, HK50.r, SP500ft.r, COPPER-Cr, AUDJPY, AUDUSD,
+  CADJPY, CHFJPY, EURAUD, EURGBP, EURJPY, EURUSD(demo), GBPJPY, USDJPY,
+  GE, GS, MRK, GOOG, AMAZON, INTEL (PF 1.04), BOEING, VISA,
+  DISNEY (fib n=3), PFIZER (fib n=2), ETH/ADA/LTC/XRP/SOL
 - symbol name failed to dump (fix `symbol:` against MT5 Market Watch first):
   UK-OIL, NG, XPTUSD, XPDUSD, NAS100ft, DJ30ft, GER40ft, UK100ft, AUS200ft
 

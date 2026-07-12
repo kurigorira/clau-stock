@@ -80,7 +80,7 @@ REM   them before trusting the results. Symbols whose Vantage names failed
 REM   to dump (GOOGL/AMZN/INTC/BA/XOM/UK-OIL/NG/XPT/XPD/index futures) stay
 REM   out of the fleet until their symbol: fields are fixed.
 set "FIB_ACC1=config\fib_gbpusd.yaml config\fib_usdchf.yaml config\fib_nzdusd.yaml config\fib_usdcad.yaml config\fib_xauusd.yaml config\fib_xagusd.yaml config\fib_cl_oil.yaml config\fib_btcusd.yaml"
-set "FIB_ACC2=config\fib_jpn225ft.yaml config\fib_amd.yaml config\fib_msft.yaml config\fib_nflx.yaml config\fib_nvidia.yaml config\fib_meta.yaml config\fib_jpm.yaml config\fib_tsla.yaml config\fib_jnj.yaml config\fib_unh.yaml config\fib_ko.yaml config\fib_pep.yaml config\fib_mcd.yaml config\fib_wmt.yaml config\fib_pg.yaml config\fib_cost.yaml config\fib_hd.yaml config\fib_nke.yaml config\fib_ma.yaml config\fib_bac.yaml config\fib_cvx.yaml config\fib_cat.yaml"
+set "FIB_ACC2=config\fib_jpn225ft.yaml config\fib_amd.yaml config\fib_msft.yaml config\fib_nflx.yaml config\fib_nvidia.yaml config\fib_meta.yaml config\fib_jpm.yaml config\fib_tsla.yaml config\fib_jnj.yaml config\fib_unh.yaml config\fib_ko.yaml config\fib_pep.yaml config\fib_mcd.yaml config\fib_wmt.yaml config\fib_pg.yaml config\fib_cost.yaml config\fib_hd.yaml config\fib_nke.yaml config\fib_ma.yaml config\fib_bac.yaml config\fib_cvx.yaml config\fib_cat.yaml config\fib_exxon.yaml"
 
 start "clau-stock account 1" cmd /k "call .venv\Scripts\activate.bat && python -u scripts\run_live.py --account 1 %FIB_ACC1%"
 
@@ -93,9 +93,9 @@ start "clau-stock alerts" cmd /k "call .venv\Scripts\activate.bat && python -u s
 
 echo.
 echo [start.bat] launched account 1 (8 symbols:  FX 4 / metals 2 / oil 1 / BTC)
-echo [start.bat] launched account 2 (22 symbols: JPN225 + 7 tech + 14 non-tech, all backtest-picked)
+echo [start.bat] launched account 2 (23 symbols: JPN225 + 7 tech + 15 non-tech, all backtest-picked)
 echo [start.bat] launched account 3 (1 symbol:   EURUSD fib-small, LIVE JPY 20k)
-echo [start.bat] launched alerts   (30 symbols + watchlist.yaml extras)
+echo [start.bat] launched alerts   (31 symbols + watchlist.yaml extras)
 echo Logs: logs\account1.log / logs\account2.log / logs\account3.log / logs\alerts1.log
 echo Close the bot windows or press Ctrl+C inside them to stop.
 echo.

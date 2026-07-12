@@ -4,7 +4,7 @@
 # Inherits all other defaults from src/gold_trader/config.py.
 symbol: EXXON
 timeframe: H1
-strategy: fibonacci
+strategy: donchian
 
 risk:
   per_trade_pct: 0.3
