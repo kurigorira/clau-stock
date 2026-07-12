@@ -136,6 +136,29 @@ drawdown per symbol per strategy. Judge the fib parameters here **before**
 letting the live account trade them; tune `fibonacci:` fields in the YAMLs and
 re-run.
 
+## Screening the whole broker catalog
+
+Instead of hand-picking symbols and testing them, reverse the workflow —
+walk everything the broker offers and keep what fits the strategies:
+
+```bash
+python scripts/screen_symbols.py --account 1 --months 6                  # all symbols
+python scripts/screen_symbols.py --account 1 --months 6 --groups "Forex*"
+python scripts/screen_symbols.py --account 2 --months 6 --groups "*Share*" --emit-configs
+```
+
+Per symbol it backtests both strategies on a chronological **70/30
+train/test split** with **spread-aware slippage** (each side pays half the
+quoted spread), and only reports symbols whose winning strategy clears the
+gate on both segments (defaults: train PF >= 1.2 with >= 10 trades, test
+PF >= 1.0 with >= 4 trades). `--emit-configs` writes
+`config/candidate_<slug>.yaml` stubs for the passers.
+
+Screening hundreds of symbols will always surface a few lucky survivors, so
+treat candidates as a shortlist: sanity-check spreads/session hours, then
+add the ones you trust to `start.bat`. Expect a full catalog scan to take
+tens of minutes; `--groups`/`--limit` narrow it down.
+
 ### Email notification
 
 When an entry is filled, the executor sends a one-line summary email via
