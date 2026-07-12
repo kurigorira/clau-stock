@@ -1,8 +1,8 @@
-# GOOG fibonacci retrace preset (stock, account 2).
+# BOEING fibonacci retrace preset (stock, account 2).
 # Entry: H4 trend + fib 38.2-78.6% pullback + 2-bar bounce + volume + MACD.
 # TP at the 161.8% extension; SL beyond the H4 swing. See README "Fibonacci".
 # Inherits all other defaults from src/gold_trader/config.py.
-symbol: GOOG
+symbol: BOEING
 timeframe: H1
 strategy: fibonacci
 
@@ -23,6 +23,6 @@ session:
   trade_days: [Mon, Tue, Wed, Thu, Fri]
 
 execution:
-  magic_number: 20260730
+  magic_number: 20260737
   deviation_points: 30
-  comment: "fib_googl"
+  comment: "fib_boeing"
