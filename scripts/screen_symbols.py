@@ -89,6 +89,9 @@ def main() -> None:
                         help="write config/candidate_<slug>.yaml for each passer")
     parser.add_argument("--magic-base", type=int, default=20260800,
                         help="first magic_number for emitted candidate configs")
+    parser.add_argument("--symbols", nargs="*", default=[],
+                        help="scan exactly these symbols (bypasses --groups AND the "
+                             "settled-symbol filter; use to re-validate candidates)")
     args = parser.parse_args()
 
     load_dotenv()
@@ -115,25 +118,37 @@ def main() -> None:
     with connect(creds) as mt5:
         import pandas as pd
 
-        symbols = []
-        for pattern in args.groups.split(","):
-            symbols.extend(mt5.symbols_get(group=pattern.strip()) or [])
-        settled = set() if args.include_existing else existing_symbols(
-            Path(__file__).resolve().parents[1] / "config"
-        )
-        # dedupe, tradeable only, skip already-settled symbols
-        seen = set()
-        tradeable = []
-        skipped_settled = 0
-        for s in symbols:
-            if s.name in seen:
-                continue
-            seen.add(s.name)
-            if s.name in settled:
-                skipped_settled += 1
-                continue
-            if s.trade_mode == mt5.SYMBOL_TRADE_MODE_FULL:
-                tradeable.append(s)
+        if args.symbols:
+            # explicit re-validation list: no group scan, no settled filter
+            tradeable = []
+            for name in args.symbols:
+                mt5.symbol_select(name, True)
+                info = mt5.symbol_info(name)
+                if info is None:
+                    print(f"  {name}: unknown symbol, skipped", flush=True)
+                    continue
+                tradeable.append(info)
+            skipped_settled = 0
+        else:
+            symbols = []
+            for pattern in args.groups.split(","):
+                symbols.extend(mt5.symbols_get(group=pattern.strip()) or [])
+            settled = set() if args.include_existing else existing_symbols(
+                Path(__file__).resolve().parents[1] / "config"
+            )
+            # dedupe, tradeable only, skip already-settled symbols
+            seen = set()
+            tradeable = []
+            skipped_settled = 0
+            for s in symbols:
+                if s.name in seen:
+                    continue
+                seen.add(s.name)
+                if s.name in settled:
+                    skipped_settled += 1
+                    continue
+                if s.trade_mode == mt5.SYMBOL_TRADE_MODE_FULL:
+                    tradeable.append(s)
         print(f"scanning {len(tradeable)} tradeable symbols "
               f"({skipped_settled} already settled in config/ skipped; "
               f"groups={args.groups}, {args.months} months, split={args.split})",
@@ -154,10 +169,18 @@ def main() -> None:
             df = df[["open", "high", "low", "close", "volume"]]
             scanned += 1
 
+            # Floating-spread symbols report spread=0 in symbol_info; fall
+            # back to the live tick's ask-bid so slippage stays realistic.
+            spread_pts = float(info.spread)
+            if spread_pts <= 0 and info.point > 0:
+                tick = mt5.symbol_info_tick(sym)
+                if tick and tick.ask > 0 and tick.bid > 0 and tick.ask >= tick.bid:
+                    spread_pts = (tick.ask - tick.bid) / info.point
+
             try:
                 result = score_symbol(
                     sym, df, cfg,
-                    spread_points=float(info.spread),
+                    spread_points=spread_pts,
                     point=float(info.point),
                     split_ratio=args.split,
                 )
