@@ -197,6 +197,28 @@ A 12-month full-catalog scan takes a few hours; it runs unattended and
 appends progress to `logs\review.log`. The email is a report, not an
 action — fleet changes remain a manual decision.
 
+## Daily status email
+
+`scripts/daily_report.py` connects to accounts 1/2/3 over MT5 and emails a
+snapshot: equity/balance, today's realized PnL and trade count, open
+positions (with SL/TP), a strategy (fibonacci vs donchian vs manual)
+breakdown, and any position missing a stop-loss. It reads live account
+state directly, so it still reports on the paused account 3 and on
+manually-placed positions (magic 0 shows as "manual"; an unrecognized
+magic shows as "unknown"). It does not trade or modify anything.
+
+Register two Task Scheduler entries — a morning wrap-up of the overnight
+session and an evening snapshot before the US stock session:
+
+```bat
+schtasks /Create /TN "clau-stock daily report AM" /TR "C:\path\to\clau-stock\scripts\daily_report.bat" /SC DAILY /ST 06:00
+schtasks /Create /TN "clau-stock daily report PM" /TR "C:\path\to\clau-stock\scripts\daily_report.bat" /SC DAILY /ST 21:00
+```
+
+Test manually with `python scripts\daily_report.py --dry-run` (prints the
+report, sends nothing) or `--accounts 1` to check a single account.
+Progress appends to `logs\daily_report.log`.
+
 ### Email notification
 
 When an entry is filled, the executor sends a one-line summary email via
