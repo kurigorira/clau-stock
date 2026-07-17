@@ -66,6 +66,14 @@ def _gather_account_report(account_id: str, creds: MT5Credentials, magic_index) 
 
 
 def main() -> None:
+    # Task Scheduler runs stdout through the console codepage (cp932 on
+    # ja-JP Windows), which can't encode arbitrary Unicode; force UTF-8 so a
+    # stray character never crashes the report before the email is built.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(description="clau-stock twice-daily status email")
     parser.add_argument("--accounts", nargs="*", default=["1", "2", "3"])
     parser.add_argument("--dry-run", action="store_true", help="print the report, don't email it")

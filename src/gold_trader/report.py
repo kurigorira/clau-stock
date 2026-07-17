@@ -141,8 +141,12 @@ def to_position_snapshot(p: Any, magic_index: dict[int, Config]) -> PositionSnap
 
 
 def _money(x: float) -> str:
+    # Plain ASCII on purpose: Windows Task Scheduler runs this script's
+    # stdout through the console codepage (cp932 on ja-JP systems), which
+    # cannot encode U+00A5 (¥) and crashes print() before the email is even
+    # built. "JPY " avoids the whole class of codepage issues.
     sign = "+" if x >= 0 else ""
-    return f"{sign}¥{x:,.0f}"
+    return f"{sign}JPY {x:,.0f}"
 
 
 def format_report_email(reports: list[AccountReport], generated_at: str) -> tuple[str, str]:
@@ -167,7 +171,7 @@ def format_report_email(reports: list[AccountReport], generated_at: str) -> tupl
             lines.append("")
             continue
 
-        lines.append(f"  equity : ¥{r.equity:,.0f}   balance: ¥{r.balance:,.0f}")
+        lines.append(f"  equity : JPY {r.equity:,.0f}   balance: JPY {r.balance:,.0f}")
         lines.append(f"  today  : {_money(r.realized_pnl_today)}  ({r.trades_today} trades closed)")
 
         if r.closed_groups:
