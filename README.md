@@ -142,6 +142,36 @@ drawdown per symbol per strategy. Judge the fib parameters here **before**
 letting the live account trade them; tune `fibonacci:` fields in the YAMLs and
 re-run.
 
+`run_backtest.py` additionally prints an **exit-reason breakdown** (tp / sl /
+channel: count, pnl, win%, avg bars held). Use it to see whether the
+Donchian-channel safety exit is cutting fib winners short of their 161.8% TP
+(many profitable `channel` exits, few `tp`) — a signal to widen
+`exit_donchian_length`.
+
+## Tuning parameters (pooled sweep)
+
+`scripts/sweep_params.py` varies ONE parameter and scores it by pooling
+trades across every symbol that runs a strategy, on a train/test split:
+
+```bash
+python scripts/sweep_params.py --strategy donchian \
+    --param risk.atr_stop_mult --values 2.0,2.5,3.0 --base-config config/fib_xauusd.yaml
+python scripts/sweep_params.py --strategy fibonacci \
+    --param fibonacci.retrace_min --values 0.382,0.5,0.618
+```
+
+**Why pooled, and how many parameters you can safely tune:** a single symbol
+has only ~20-40 trades over 12 months — far too few to fit even one
+parameter without chasing noise. Pooling all symbols in a strategy yields
+hundreds of trades, enough to move **1-2 parameters** with the train/test
+guard. Rule of thumb: ~1 free parameter per 50-100 trades. So:
+- per-symbol tuning: essentially 0 parameters (don't)
+- strategy-level pooled: 1-2 parameters, swept one at a time
+- never a 5-dimensional grid search — that fits the noise, not the edge
+
+**Only adopt a value that beats the current setting on BOTH train and test
+PF.** A train-only improvement is overfitting.
+
 ## Screening the whole broker catalog
 
 Instead of hand-picking symbols and testing them, reverse the workflow —
@@ -218,6 +248,23 @@ schtasks /Create /TN "clau-stock daily report PM" /TR "C:\path\to\clau-stock\scr
 Test manually with `python scripts\daily_report.py --dry-run` (prints the
 report, sends nothing) or `--accounts 1` to check a single account.
 Progress appends to `logs\daily_report.log`.
+
+## Live-vs-backtest scorecard
+
+`scripts/scorecard.py` answers the most important question once real trades
+exist: **does the backtested edge survive live spreads and slippage?** For
+each launched symbol it pulls the last N days of closed MT5 deals, backtests
+the same recent window from `data/<symbol>_h1.csv`, and compares profit
+factors. Symbols whose live PF has decayed well below backtest are flagged
+`underperforming` (review or remove); thin samples read `too-few`.
+
+```bash
+python scripts/scorecard.py --account 1 --days 30 --dry-run
+python scripts/scorecard.py --account 1 --days 30            # emails the report
+```
+
+Run it weekly once ~30 days of live history has accumulated (before that
+most rows read `too-few`). It reads live state only — it never trades.
 
 ### Email notification
 

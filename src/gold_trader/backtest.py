@@ -20,6 +20,8 @@ class Trade:
     exit_price: float
     stop: float
     pnl_price: float
+    reason: str = "channel"  # "tp" | "sl" | "channel"
+    bars_held: int = 0
 
 
 def run_backtest(
@@ -46,6 +48,7 @@ def run_backtest(
     buffer_mult = cfg.breakout.atr_buffer_mult
     stop_mult = cfg.risk.atr_stop_mult
 
+    entry_i = 0
     for i in range(1, len(data)):
         bar = data.iloc[i]
 
@@ -75,6 +78,8 @@ def run_backtest(
                         exit_price=exit_price,
                         stop=stop,
                         pnl_price=pnl,
+                        reason="sl" if hit_stop else "channel",
+                        bars_held=i - entry_i,
                     )
                 )
                 side = None
@@ -101,11 +106,13 @@ def run_backtest(
                 side = "buy"
                 entry_price = close + slippage_price
                 entry_time = bar.name
+                entry_i = i
                 stop = close - stop_mult * atr
             elif close < lo - buffer and close < ema and ema_slope < 0:
                 side = "sell"
                 entry_price = close - slippage_price
                 entry_time = bar.name
+                entry_i = i
                 stop = close + stop_mult * atr
 
     return _summary(trades)
@@ -142,6 +149,7 @@ def _run_backtest_fib(
     tp = 0.0
 
     warmup = max(cfg.fibonacci.vol_sma_length, cfg.fibonacci.macd_slow) + 2
+    entry_i = 0
     for i in range(warmup, len(data)):
         bar = data.iloc[i]
 
@@ -161,10 +169,13 @@ def _run_backtest_fib(
             if hit_stop or hit_tp or exit_signal:
                 if hit_stop:
                     exit_price = stop
+                    reason = "sl"
                 elif hit_tp:
                     exit_price = tp
+                    reason = "tp"
                 else:
                     exit_price = float(bar["close"])
+                    reason = "channel"
                 exit_price -= slippage_price if side == "buy" else -slippage_price
                 pnl = (
                     exit_price - entry_price
@@ -180,6 +191,8 @@ def _run_backtest_fib(
                         exit_price=exit_price,
                         stop=stop,
                         pnl_price=pnl,
+                        reason=reason,
+                        bars_held=i - entry_i,
                     )
                 )
                 side = None
@@ -196,15 +209,40 @@ def _run_backtest_fib(
                 slippage_price if side == "buy" else -slippage_price
             )
             entry_time = bar.name
+            entry_i = i
             stop = sig.stop
             tp = sig.tp
 
     return _summary(trades)
 
 
+def exit_reason_breakdown(trades: List[Trade]) -> dict:
+    """Per-exit-reason aggregates: count, total pnl, win rate, avg bars held.
+
+    Reveals whether the Donchian-channel safety exit is cutting winners
+    short before the fib TP (many profitable 'channel' exits + few 'tp'),
+    or whether stops dominate.
+    """
+    out: dict[str, dict] = {}
+    for reason in ("tp", "sl", "channel"):
+        rt = [t for t in trades if t.reason == reason]
+        if not rt:
+            continue
+        pnls = np.array([t.pnl_price for t in rt])
+        held = np.array([t.bars_held for t in rt])
+        out[reason] = {
+            "n": len(rt),
+            "pnl": float(pnls.sum()),
+            "win_rate": float((pnls > 0).mean()),
+            "avg_bars_held": float(held.mean()),
+        }
+    return out
+
+
 def _summary(trades: List[Trade]) -> dict:
     if not trades:
-        return {"trades": [], "n": 0, "win_rate": 0.0, "total_pnl_price": 0.0}
+        return {"trades": [], "n": 0, "win_rate": 0.0, "total_pnl_price": 0.0,
+                "exit_reasons": {}}
     pnls = np.array([t.pnl_price for t in trades])
     wins = pnls > 0
     return {
@@ -215,6 +253,7 @@ def _summary(trades: List[Trade]) -> dict:
         "avg_win": float(pnls[wins].mean()) if wins.any() else 0.0,
         "avg_loss": float(pnls[~wins].mean()) if (~wins).any() else 0.0,
         "max_drawdown_price": float(_max_drawdown(pnls.cumsum())),
+        "exit_reasons": exit_reason_breakdown(trades),
     }
 
 

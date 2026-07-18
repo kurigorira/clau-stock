@@ -29,6 +29,15 @@ def main() -> None:
         print(f"avg win:       {result['avg_win']:.2f}")
         print(f"avg loss:      {result['avg_loss']:.2f}")
         print(f"max drawdown:  {result['max_drawdown_price']:.2f}")
+        reasons = result.get("exit_reasons", {})
+        if reasons:
+            print("\nexit reasons:")
+            print(f"  {'reason':<8} {'n':>4} {'pnl':>12} {'win%':>7} {'avgBars':>8}")
+            for reason, s in reasons.items():
+                print(
+                    f"  {reason:<8} {s['n']:>4} {s['pnl']:>12.2f} "
+                    f"{s['win_rate']:>7.1%} {s['avg_bars_held']:>8.1f}"
+                )
 
 
 if __name__ == "__main__":
