@@ -15,6 +15,7 @@ risk:
 filters:
   atr_pct_min: 0.001
   atr_pct_max: 0.10
+  adx_min: 25.0
 
 daily_guard:
   max_consecutive_losses: 2
