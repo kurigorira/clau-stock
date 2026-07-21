@@ -10,7 +10,15 @@ import pandas as pd
 from . import mt5_client, notify
 from .config import Config
 from .risk import position_volume
-from .strategy import _atr, add_indicators, evaluate_fib_entry, evaluate_last_bar, should_exit
+from .strategy import (
+    _atr,
+    add_indicators,
+    evaluate_fib_entry,
+    evaluate_last_bar,
+    evaluate_macd_entry,
+    should_exit,
+    should_exit_macd,
+)
 
 
 _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -127,16 +135,20 @@ class Executor:
 
         if self.cfg.strategy == "fibonacci":
             signal = evaluate_fib_entry(data, data_h4, self.cfg)
+        elif self.cfg.strategy == "macd":
+            signal = evaluate_macd_entry(data, data_h4, self.cfg)
         else:
             signal = evaluate_last_bar(data, self.cfg, data_h4)
         positions = mt5_client.open_positions(
             self.cfg.symbol, self.cfg.execution.magic_number
         )
 
-        # exits first
+        # exits first — macd uses the opposite-cross exit; every other strategy
+        # uses the Donchian reverse-channel exit.
+        exit_fn = should_exit_macd if self.cfg.strategy == "macd" else should_exit
         for p in positions:
             side = "buy" if p.type == 0 else "sell"  # POSITION_TYPE_BUY = 0
-            if should_exit(side, data.iloc[-1]):
+            if exit_fn(side, data.iloc[-1]):
                 self.log.info(f"exit {side} ticket={p.ticket}")
                 mt5_client.close_position(
                     p,

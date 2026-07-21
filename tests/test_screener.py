@@ -83,7 +83,7 @@ def test_score_symbol_returns_both_strategies():
     cfg = Config()
     result = score_symbol("TEST", _h1(800), cfg, spread_points=20.0, point=0.01)
     assert result.symbol == "TEST"
-    assert {s.strategy for s in result.scores} == {"donchian", "fibonacci"}
+    assert {s.strategy for s in result.scores} == {"donchian", "fibonacci", "macd"}
     assert result.spread_points == 20.0
 
 

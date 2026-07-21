@@ -64,9 +64,15 @@ def main() -> None:
     frames: dict = {}
     for csv_path in csvs:
         preset = _preset_for(csv_path)
-        # if there's a matching preset, only include it when its strategy matches;
-        # explicit CSVs with no preset are always included
-        if preset is not None and Config.from_yaml(preset).strategy != args.strategy and not args.csvs:
+        # Filter by the matching preset's strategy only for donchian/fibonacci,
+        # which have per-symbol presets. macd has none (it's exploratory), so a
+        # macd sweep pools over ALL symbols. Explicit CSVs are always included.
+        if (
+            args.strategy != "macd"
+            and preset is not None
+            and Config.from_yaml(preset).strategy != args.strategy
+            and not args.csvs
+        ):
             continue
         frames[csv_path.stem] = load_csv(csv_path)
 

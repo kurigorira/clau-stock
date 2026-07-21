@@ -51,14 +51,17 @@ def _profit_factor(trades) -> float:
     return wins / losses if losses > 0 else float("inf") if wins > 0 else 0.0
 
 
-def _run_both(csv_path: Path, cfg: Config) -> tuple[dict, dict]:
+STRATEGIES = ("donchian", "fibonacci", "macd")
+
+
+def _run_all(csv_path: Path, cfg: Config) -> list[tuple[str, dict]]:
     df = load_csv(csv_path)
-    results = []
-    for strategy in ("donchian", "fibonacci"):
+    out = []
+    for strategy in STRATEGIES:
         c = copy.deepcopy(cfg)
         c.strategy = strategy
-        results.append(run_backtest(df, c))
-    return results[0], results[1]
+        out.append((strategy, run_backtest(df, c)))
+    return out
 
 
 def main() -> None:
@@ -91,11 +94,11 @@ def main() -> None:
             else:
                 cfg, cfg_label = Config(), "DEFAULT (no fib_*.yaml match!)"
         try:
-            don, fib = _run_both(csv_path, cfg)
+            results = _run_all(csv_path, cfg)
         except Exception as exc:  # noqa: BLE001
             print(f"{symbol:<16} | ERROR: {exc}")
             continue
-        for name, r in (("donchian", don), ("fibonacci", fib)):
+        for name, r in results:
             pf = _profit_factor(r["trades"])
             pf_s = f"{pf:6.2f}" if pf != float("inf") else "   inf"
             print(

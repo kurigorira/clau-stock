@@ -122,8 +122,23 @@ Tunables live under `fibonacci:` in each YAML — see `FibonacciConfig` in
 
 No fixed TP; exits via the reverse Donchian channel or ATR stop.
 
+### macd (exploratory) — MACD/signal cross
+
+1. Entry: MACD histogram crosses zero — long when it flips from ≤0 to >0
+   (bullish MACD/signal cross), short on the reverse
+2. `macd.use_h4_filter: true` additionally requires the H4 trend to agree
+   (set `false` for pure MACD, no trend gate)
+3. ATR% band
+4. SL = `close ∓ risk.atr_stop_mult × ATR`; exit on the opposite cross (no TP)
+
+Not launched by `start.bat` — it exists to answer "how would MACD-only do?"
+empirically. `config/macd_example.yaml` (H4-filtered) and `config/macd_pure.yaml`
+(no filter) are compared against donchian/fibonacci via `backtest_all.py`.
+MACD params live under `macd:` and are independent of the `fibonacci:` MACD
+filter, so tuning one never perturbs the other.
+
 Daily-guard limits (consecutive losses, daily realized-loss cap) are enforced
-at the executor layer for both strategies and reset at UTC midnight. The H4
+at the executor layer for all strategies and reset at UTC midnight. The H4
 frame is cached for 15 minutes per executor, so MT5 API load stays flat.
 
 ## Backtesting the switch

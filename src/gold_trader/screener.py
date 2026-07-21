@@ -158,7 +158,7 @@ def score_symbol(
     slippage = spread_points * point / 2.0
     train, test = split_frame(df_h1, split_ratio)
     scores: list[StrategyScore] = []
-    for strategy in ("donchian", "fibonacci"):
+    for strategy in ("donchian", "fibonacci", "macd"):
         c = copy.deepcopy(cfg)
         c.strategy = strategy
         r_train = run_backtest(train, c, slippage_price=slippage)

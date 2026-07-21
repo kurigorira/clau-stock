@@ -122,7 +122,14 @@ def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     out["exit_high"] = out["high"].rolling(m).max().shift(1)
     out["exit_low"] = out["low"].rolling(m).min().shift(1)
     fib = cfg.fibonacci
-    out["macd_hist"] = _macd_hist(out["close"], fib.macd_fast, fib.macd_slow, fib.macd_signal)
+    # The macd strategy tunes MACD via cfg.macd; every other strategy uses the
+    # fib MACD params (fib reads macd_hist as one of its entry filters). This
+    # keeps the two independent so tuning one never perturbs the other.
+    if cfg.strategy == "macd":
+        mf, ms, mg = cfg.macd.fast, cfg.macd.slow, cfg.macd.signal
+    else:
+        mf, ms, mg = fib.macd_fast, fib.macd_slow, fib.macd_signal
+    out["macd_hist"] = _macd_hist(out["close"], mf, ms, mg)
     out["vol_sma"] = out["volume"].rolling(fib.vol_sma_length).mean().shift(1)
     return out
 
@@ -329,3 +336,68 @@ def evaluate_fib_entry(
         h4_trend_dir=dir_h4, tp=tp,
         swing_high=swing_high, swing_low=swing_low, fib_level=fib_level,
     )
+
+
+# ---------------------------------------------------------------------------
+# MACD strategy (strategy: "macd")
+# ---------------------------------------------------------------------------
+
+
+def evaluate_macd_entry(
+    df_h1: pd.DataFrame,
+    df_h4: Optional[pd.DataFrame],
+    cfg: Config,
+) -> Signal:
+    """MACD/signal cross entry on the most recent closed H1 bar.
+
+    Long: macd_hist flips from <=0 (prev bar) to >0 (this bar). Short is the
+    mirror. When cfg.macd.use_h4_filter is on, the cross must agree with the
+    H4 trend direction. SL = close -/+ risk.atr_stop_mult * ATR; no fixed TP
+    (the position rides until the opposite cross — see should_exit_macd).
+    """
+    if len(df_h1) < 2:
+        return Signal(None, 0.0, 0.0, 0.0)
+
+    bar = df_h1.iloc[-1]
+    close = float(bar["close"])
+    atr = float(bar["atr"])
+    atr_pct = float(bar["atr_pct"])
+    hist_now = float(df_h1["macd_hist"].iloc[-1])
+    hist_prev = float(df_h1["macd_hist"].iloc[-2])
+    if any(np.isnan(x) for x in (atr, atr_pct, hist_now, hist_prev)):
+        return Signal(None, 0.0, close, 0.0 if np.isnan(atr) else atr)
+
+    f = cfg.filters
+    if not (f.atr_pct_min <= atr_pct <= f.atr_pct_max):
+        return Signal(None, 0.0, close, atr)
+
+    cross_up = hist_prev <= 0 < hist_now
+    cross_down = hist_prev >= 0 > hist_now
+    if not (cross_up or cross_down):
+        return Signal(None, 0.0, close, atr)
+
+    dir_h4 = 0
+    if cfg.macd.use_h4_filter and cfg.trend.higher_timeframe:
+        if df_h4 is None:
+            return Signal(None, 0.0, close, atr)
+        dir_h4 = h4_trend_dir(df_h4, cfg)
+        if cross_up and dir_h4 != 1:
+            return Signal(None, 0.0, close, atr, h4_trend_dir=dir_h4)
+        if cross_down and dir_h4 != -1:
+            return Signal(None, 0.0, close, atr, h4_trend_dir=dir_h4)
+
+    stop_dist = cfg.risk.atr_stop_mult * atr
+    if cross_up:
+        return Signal("buy", close - stop_dist, close, atr, h4_trend_dir=dir_h4)
+    return Signal("sell", close + stop_dist, close, atr, h4_trend_dir=dir_h4)
+
+
+def should_exit_macd(position_side: str, bar: pd.Series) -> bool:
+    """MACD opposite-cross exit: a long exits once the histogram is no longer
+    positive, a short once it is no longer negative."""
+    hist = float(bar["macd_hist"])
+    if np.isnan(hist):
+        return False
+    if position_side == "buy":
+        return hist <= 0
+    return hist >= 0

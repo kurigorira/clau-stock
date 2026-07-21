@@ -1,0 +1,31 @@
+# Pure MACD strategy: MACD/signal cross only, NO H4 trend filter.
+# The honest "MACD だけ" test. Compare against macd_example.yaml (H4-filtered)
+# and against donchian/fibonacci via scripts/backtest_all.py. NOT launched.
+symbol: BTCUSD
+timeframe: H1
+strategy: macd
+
+macd:
+  fast: 12
+  slow: 26
+  signal: 9
+  use_h4_filter: false
+
+risk:
+  per_trade_pct: 0.3
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  adx_min: 25.0
+  atr_pct_min: 0.001
+  atr_pct_max: 0.10
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0
+
+execution:
+  magic_number: 20260802
+  deviation_points: 20
+  comment: "macd_pure"

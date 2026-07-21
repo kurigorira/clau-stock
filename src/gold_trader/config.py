@@ -90,7 +90,22 @@ class FibonacciConfig:
     stop_atr_buffer: float = 0.2   # SL sits this many ATRs beyond the swing
 
 
-_STRATEGY_NAMES = ("donchian", "fibonacci")
+@dataclass
+class MacdConfig:
+    """Parameters for strategy: "macd" (MACD/signal cross entries).
+
+    Entry on the histogram crossing zero (= MACD line crossing the signal
+    line): long when it flips from <=0 to >0, short on the reverse. Exit on
+    the opposite cross, with an ATR stop (risk.atr_stop_mult) as a safety
+    net. use_h4_filter=true additionally requires the H4 trend to agree.
+    """
+    fast: int = 12
+    slow: int = 26
+    signal: int = 9
+    use_h4_filter: bool = True   # false = pure MACD, no trend gate
+
+
+_STRATEGY_NAMES = ("donchian", "fibonacci", "macd")
 
 
 @dataclass
@@ -114,6 +129,7 @@ class Config:
     trend: TrendConfig = field(default_factory=TrendConfig)
     breakout: BreakoutConfig = field(default_factory=BreakoutConfig)
     fibonacci: FibonacciConfig = field(default_factory=FibonacciConfig)
+    macd: MacdConfig = field(default_factory=MacdConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     filters: FilterConfig = field(default_factory=FilterConfig)
     daily_guard: DailyGuardConfig = field(default_factory=DailyGuardConfig)
@@ -161,6 +177,7 @@ class Config:
             trend=TrendConfig(**(raw.get("trend") or {})),
             breakout=BreakoutConfig(**(raw.get("breakout") or {})),
             fibonacci=FibonacciConfig(**(raw.get("fibonacci") or {})),
+            macd=MacdConfig(**(raw.get("macd") or {})),
             risk=RiskConfig(**(raw.get("risk") or {})),
             filters=FilterConfig(**(raw.get("filters") or {})),
             daily_guard=DailyGuardConfig(**(raw.get("daily_guard") or {})),

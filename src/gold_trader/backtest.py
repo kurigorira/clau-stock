@@ -8,7 +8,7 @@ import pandas as pd
 
 from .config import Config
 from .data import resample_ohlcv
-from .strategy import add_indicators, evaluate_fib_entry
+from .strategy import add_indicators, evaluate_fib_entry, evaluate_macd_entry, should_exit_macd
 
 
 @dataclass
@@ -37,6 +37,8 @@ def run_backtest(
     """
     if cfg.strategy == "fibonacci":
         return _run_backtest_fib(df, cfg, slippage_price=slippage_price)
+    if cfg.strategy == "macd":
+        return _run_backtest_macd(df, cfg, slippage_price=slippage_price)
     data = add_indicators(df, cfg)
     trades: List[Trade] = []
     side: str | None = None
@@ -212,6 +214,91 @@ def _run_backtest_fib(
             entry_i = i
             stop = sig.stop
             tp = sig.tp
+
+    return _summary(trades)
+
+
+def _run_backtest_macd(
+    df: pd.DataFrame,
+    cfg: Config,
+    *,
+    slippage_price: float = 0.0,
+) -> dict:
+    """MACD-strategy backtest. Entry on the MACD/signal cross (optionally
+    gated by the H4 trend), exit on the opposite cross or the ATR stop.
+
+    Like the fib backtest, H4 is synthesised from H1 via resample with the
+    same no-lookahead rule (only H4 bars closed 3h before the H1 bar close
+    are visible). Exit reasons: 'sl' for the stop, 'channel' for the
+    opposite-cross exit (reusing the shared reason vocabulary). SL fills
+    first when the stop and an opposite cross land on the same bar.
+    """
+    data = add_indicators(df, cfg)
+    use_h4 = cfg.macd.use_h4_filter and bool(cfg.trend.higher_timeframe)
+    if use_h4:
+        h4 = add_indicators(resample_ohlcv(df, "4h"), cfg)
+        closed_counts = h4.index.searchsorted(
+            data.index - pd.Timedelta(hours=3), side="right"
+        )
+    else:
+        h4 = None
+        closed_counts = None
+
+    trades: List[Trade] = []
+    side: str | None = None
+    entry_price = 0.0
+    entry_time: pd.Timestamp | None = None
+    entry_i = 0
+    stop = 0.0
+
+    warmup = cfg.macd.slow + cfg.macd.signal + 2
+    for i in range(warmup, len(data)):
+        bar = data.iloc[i]
+
+        if side is not None:
+            hit_stop = (
+                (side == "buy" and bar["low"] <= stop)
+                or (side == "sell" and bar["high"] >= stop)
+            )
+            exit_signal = should_exit_macd(side, bar)
+            if hit_stop or exit_signal:
+                exit_price = stop if hit_stop else float(bar["close"])
+                exit_price -= slippage_price if side == "buy" else -slippage_price
+                pnl = (
+                    exit_price - entry_price
+                    if side == "buy"
+                    else entry_price - exit_price
+                )
+                trades.append(
+                    Trade(
+                        side=side,
+                        entry_time=entry_time,  # type: ignore[arg-type]
+                        entry_price=entry_price,
+                        exit_time=bar.name,
+                        exit_price=exit_price,
+                        stop=stop,
+                        pnl_price=pnl,
+                        reason="sl" if hit_stop else "channel",
+                        bars_held=i - entry_i,
+                    )
+                )
+                side = None
+
+        if side is None:
+            df_h4 = None
+            if use_h4:
+                k = int(closed_counts[i])
+                df_h4 = h4.iloc[:k]
+            sig = evaluate_macd_entry(data.iloc[: i + 1], df_h4, cfg)
+            if sig.side is None:
+                continue
+            side = sig.side
+            entry_price = sig.entry_ref + (
+                slippage_price if side == "buy" else -slippage_price
+            )
+            entry_time = bar.name
+            entry_i = i
+            stop = sig.stop
 
     return _summary(trades)
 
