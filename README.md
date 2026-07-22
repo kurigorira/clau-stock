@@ -137,6 +137,26 @@ empirically. `config/macd_example.yaml` (H4-filtered) and `config/macd_pure.yaml
 MACD params live under `macd:` and are independent of the `fibonacci:` MACD
 filter, so tuning one never perturbs the other.
 
+Optional **stochastic confirmation** (`macd.use_stoch: true`) targets MACD's
+main weakness — the zero-cross fires the instant momentum turns, so it tends to
+chase already-extended moves. The gate rejects a long once %K ≥
+`stoch_overbought` and a short once %K ≤ `stoch_oversold`, so entries wait for
+room to run. Off by default (pure MACD unchanged). Presets `macd_stoch.yaml`
+(pure) and `macd_stoch_h4.yaml` (with H4) are the A/B partners of the base
+presets. Whether it actually lifts win rate is an empirical question — measure
+it fleet-wide, don't assume:
+
+```
+python scripts/ab_stoch.py            # base vs stoch on every data/*_h1.csv
+python scripts/ab_stoch.py --h4       # both legs H4-filtered
+python scripts/ab_stoch.py --overbought 70 --oversold 30   # sweep the gate
+```
+
+The **AGGREGATE** row (trade-weighted win rate and total PnL, base → stoch) is
+the verdict. Expect a trade-off: the filter usually trims trades and can lift
+win rate, but because MACD's profit rides a few large trend runs, over-tight
+thresholds cut the big winners and PnL falls even as win% rises.
+
 Daily-guard limits (consecutive losses, daily realized-loss cap) are enforced
 at the executor layer for all strategies and reset at UTC midnight. The H4
 frame is cached for 15 minutes per executor, so MT5 API load stays flat.

@@ -105,6 +105,17 @@ def _macd_hist(close: pd.Series, fast: int, slow: int, signal: int) -> pd.Series
     return macd_line - signal_line
 
 
+def _stoch_k(df: pd.DataFrame, k: int, smooth: int) -> pd.Series:
+    """Slow stochastic %K in [0, 100]. Uses the current (closed) bar's
+    high/low/close over the trailing k bars, so no shift is needed — we only
+    ever read it on the last closed bar."""
+    low_k = df["low"].rolling(k).min()
+    high_k = df["high"].rolling(k).max()
+    rng = (high_k - low_k).replace(0.0, np.nan)
+    raw_k = 100.0 * (df["close"] - low_k) / rng
+    return raw_k.rolling(smooth).mean()
+
+
 def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     out = df.copy()
     out["ema_trend"] = _ema(out["close"], cfg.trend.ema_length)
@@ -130,6 +141,8 @@ def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     else:
         mf, ms, mg = fib.macd_fast, fib.macd_slow, fib.macd_signal
     out["macd_hist"] = _macd_hist(out["close"], mf, ms, mg)
+    if cfg.strategy == "macd" and cfg.macd.use_stoch:
+        out["stoch_k"] = _stoch_k(out, cfg.macd.stoch_k, cfg.macd.stoch_smooth)
     out["vol_sma"] = out["volume"].rolling(fib.vol_sma_length).mean().shift(1)
     return out
 
@@ -375,6 +388,18 @@ def evaluate_macd_entry(
     cross_down = hist_prev >= 0 > hist_now
     if not (cross_up or cross_down):
         return Signal(None, 0.0, close, atr)
+
+    # Stochastic confirmation: don't chase an already-extended move. A long is
+    # rejected once %K is overbought, a short once %K is oversold. A NaN %K
+    # (warm-up) is treated as "no confirmation" and blocks the entry.
+    if cfg.macd.use_stoch:
+        stoch = float(bar["stoch_k"]) if "stoch_k" in bar else float("nan")
+        if np.isnan(stoch):
+            return Signal(None, 0.0, close, atr)
+        if cross_up and stoch >= cfg.macd.stoch_overbought:
+            return Signal(None, 0.0, close, atr)
+        if cross_down and stoch <= cfg.macd.stoch_oversold:
+            return Signal(None, 0.0, close, atr)
 
     dir_h4 = 0
     if cfg.macd.use_h4_filter and cfg.trend.higher_timeframe:

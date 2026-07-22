@@ -240,11 +240,63 @@ def test_config_macd_strategy_valid():
 
 def test_config_macd_presets_parse():
     config_dir = Path(__file__).resolve().parents[1] / "config"
-    for name in ("macd_example.yaml", "macd_pure.yaml"):
+    for name in ("macd_example.yaml", "macd_pure.yaml",
+                 "macd_stoch.yaml", "macd_stoch_h4.yaml"):
         cfg = Config.from_yaml(config_dir / name)
         assert cfg.strategy == "macd"
     assert Config.from_yaml(config_dir / "macd_pure.yaml").macd.use_h4_filter is False
     assert Config.from_yaml(config_dir / "macd_example.yaml").macd.use_h4_filter is True
+    assert Config.from_yaml(config_dir / "macd_stoch.yaml").macd.use_stoch is True
+
+
+# ---------------------------------------------------------------------------
+# stochastic confirmation gate
+# ---------------------------------------------------------------------------
+
+
+def _macd_stoch_cfg(overbought: float, oversold: float) -> Config:
+    cfg = _macd_cfg()
+    cfg.macd.use_stoch = True
+    cfg.macd.stoch_overbought = overbought
+    cfg.macd.stoch_oversold = oversold
+    return cfg
+
+
+def test_stoch_gate_off_by_default():
+    # a plain macd Config must not compute stoch_k (pure behaviour unchanged)
+    cfg = _macd_cfg()
+    assert cfg.macd.use_stoch is False
+    df = _frame_from_close(_bullish_cross_series(), cfg)
+    assert "stoch_k" not in df.columns
+
+
+def test_stoch_gate_blocks_overbought_long():
+    # overbought threshold 0 -> every %K is >= 0, so all longs are rejected
+    cfg = _macd_stoch_cfg(overbought=0.0, oversold=100.0)
+    df = _frame_from_close(_bullish_cross_series(), cfg)
+    i = _find_cross(df, "up")
+    assert i > 0
+    assert not np.isnan(df["stoch_k"].iloc[i])   # gate actually evaluated
+    sig = evaluate_macd_entry(df.iloc[: i + 1], None, cfg)
+    assert sig.side is None
+
+
+def test_stoch_gate_allows_when_not_overbought():
+    # overbought threshold 100 -> %K never reaches it, long passes as usual
+    cfg = _macd_stoch_cfg(overbought=100.0, oversold=0.0)
+    df = _frame_from_close(_bullish_cross_series(), cfg)
+    i = _find_cross(df, "up")
+    sig = evaluate_macd_entry(df.iloc[: i + 1], None, cfg)
+    assert sig.side == "buy"
+
+
+def test_stoch_gate_blocks_oversold_short():
+    cfg = _macd_stoch_cfg(overbought=100.0, oversold=100.0)  # oversold cutoff at top
+    df = _frame_from_close(_bearish_cross_series(), cfg)
+    i = _find_cross(df, "down")
+    assert i > 0
+    sig = evaluate_macd_entry(df.iloc[: i + 1], None, cfg)
+    assert sig.side is None
 
 
 def test_macd_params_independent_from_fib():
