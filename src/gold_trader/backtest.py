@@ -6,6 +6,7 @@ from typing import List
 import numpy as np
 import pandas as pd
 
+from .breadth import breadth_blocks
 from .config import Config
 from .data import resample_ohlcv
 from .strategy import (
@@ -30,21 +31,36 @@ class Trade:
     bars_held: int = 0
 
 
+def _breadth_map(cfg: Config, breadth: "pd.Series | None") -> "dict | None":
+    """dict {timestamp: net breadth} when the regime gate is active, else None.
+
+    Returning None short-circuits every per-bar lookup to a no-op, so a backtest
+    without the filter pays nothing."""
+    if not cfg.breadth.use or breadth is None or len(breadth) == 0:
+        return None
+    return breadth.to_dict()
+
+
 def run_backtest(
     df: pd.DataFrame,
     cfg: Config,
     *,
     slippage_price: float = 0.0,
+    breadth: "pd.Series | None" = None,
 ) -> dict:
     """Bar-by-bar backtest dispatched on cfg.strategy.
 
     Daily-guard limits (consecutive losses, daily loss cap) are NOT applied
     here — they're enforced live by the executor against the broker account.
+
+    `breadth` is an optional market-breadth series (see breadth.compute_breadth)
+    used as a regime gate when cfg.breadth.use is on; it is ignored otherwise.
     """
     if cfg.strategy == "fibonacci":
-        return _run_backtest_fib(df, cfg, slippage_price=slippage_price)
+        return _run_backtest_fib(df, cfg, slippage_price=slippage_price, breadth=breadth)
     if cfg.strategy == "macd":
-        return _run_backtest_macd(df, cfg, slippage_price=slippage_price)
+        return _run_backtest_macd(df, cfg, slippage_price=slippage_price, breadth=breadth)
+    bmap = _breadth_map(cfg, breadth)
     data = add_indicators(df, cfg)
     trades: List[Trade] = []
     side: str | None = None
@@ -111,9 +127,11 @@ def run_backtest(
                 continue
             buffer = buffer_mult * atr
             gate = cfg.stoch.use  # shared stochastic confirmation, off by default
+            bval = bmap.get(bar.name, float("nan")) if bmap is not None else None
             if (
                 close > hi + buffer and close > ema and ema_slope > 0
                 and not (gate and stoch_blocks("buy", bar, cfg))
+                and not (bmap is not None and breadth_blocks("buy", bval, cfg.breadth.min_net))
             ):
                 side = "buy"
                 entry_price = close + slippage_price
@@ -123,6 +141,7 @@ def run_backtest(
             elif (
                 close < lo - buffer and close < ema and ema_slope < 0
                 and not (gate and stoch_blocks("sell", bar, cfg))
+                and not (bmap is not None and breadth_blocks("sell", bval, cfg.breadth.min_net))
             ):
                 side = "sell"
                 entry_price = close - slippage_price
@@ -138,6 +157,7 @@ def _run_backtest_fib(
     cfg: Config,
     *,
     slippage_price: float = 0.0,
+    breadth: "pd.Series | None" = None,
 ) -> dict:
     """Fibonacci-strategy backtest over an H1 frame.
 
@@ -149,6 +169,7 @@ def _run_backtest_fib(
     When SL and TP are both touched within one bar the SL fills first
     (conservative).
     """
+    bmap = _breadth_map(cfg, breadth)
     data = add_indicators(df, cfg)
     h4 = add_indicators(resample_ohlcv(df, "4h"), cfg)
     # h4_closed_count[i] = number of H4 bars fully closed before H1 bar i closes
@@ -219,6 +240,10 @@ def _run_backtest_fib(
             sig = evaluate_fib_entry(data.iloc[: i + 1], h4.iloc[:k], cfg)
             if sig.side is None or sig.tp is None:
                 continue
+            if bmap is not None and breadth_blocks(
+                sig.side, bmap.get(bar.name, float("nan")), cfg.breadth.min_net
+            ):
+                continue
             side = sig.side
             entry_price = sig.entry_ref + (
                 slippage_price if side == "buy" else -slippage_price
@@ -236,6 +261,7 @@ def _run_backtest_macd(
     cfg: Config,
     *,
     slippage_price: float = 0.0,
+    breadth: "pd.Series | None" = None,
 ) -> dict:
     """MACD-strategy backtest. Entry on the MACD/signal cross (optionally
     gated by the H4 trend), exit on the opposite cross or the ATR stop.
@@ -246,6 +272,7 @@ def _run_backtest_macd(
     opposite-cross exit (reusing the shared reason vocabulary). SL fills
     first when the stop and an opposite cross land on the same bar.
     """
+    bmap = _breadth_map(cfg, breadth)
     data = add_indicators(df, cfg)
     use_h4 = cfg.macd.use_h4_filter and bool(cfg.trend.higher_timeframe)
     if use_h4:
@@ -304,6 +331,10 @@ def _run_backtest_macd(
                 df_h4 = h4.iloc[:k]
             sig = evaluate_macd_entry(data.iloc[: i + 1], df_h4, cfg)
             if sig.side is None:
+                continue
+            if bmap is not None and breadth_blocks(
+                sig.side, bmap.get(bar.name, float("nan")), cfg.breadth.min_net
+            ):
                 continue
             side = sig.side
             entry_price = sig.entry_ref + (

@@ -182,6 +182,37 @@ thresholds cut the big winners and total PnL falls even as win% rises — so
 judge on PnL, not win% alone. Presets `macd_stoch.yaml` / `macd_stoch_h4.yaml`
 show the section wired onto the MACD examples.
 
+### Market-breadth regime filter (`breadth:`) — US-stock new highs vs new lows
+
+A cross-sectional regime gate. Unlike every other filter (which reads one
+symbol's own bars), breadth is computed from the **whole US-stock universe** at
+once: at each timestamp, `#stocks making a new lookback-bar high − #making a new
+low` (see `src/gold_trader/breadth.py`, `US_STOCKS`). When `breadth.use` is on,
+a long is admitted only when net breadth `> min_net` (the group is broadly
+making new highs), a short only when `< -min_net`. Because the signal only means
+something inside the universe it is built from, it is applied to US stocks only.
+
+```yaml
+breadth:
+  use: true
+  lookback: 100   # bars defining a new high / new low
+  min_net: 0      # required |net breadth| (0 = simple majority)
+```
+
+The series is cross-sectional, so it can't live in a per-symbol indicator
+column — the runner builds it once from every US-stock CSV and injects it
+(`run_backtest(..., breadth=...)`). `ab_breadth.py` does exactly that for the
+A/B:
+
+```
+python scripts/ab_breadth.py --strategy donchian       # US stocks, gate off vs on
+python scripts/ab_breadth.py --strategy fibonacci
+python scripts/ab_breadth.py --strategy donchian --sweep 0,1,2,3,5   # min_net curve
+```
+
+Live wiring (the executor computing breadth from all US-stock feeds each poll)
+is a separate step — enable it only if the backtest AGGREGATE row justifies it.
+
 Daily-guard limits (consecutive losses, daily realized-loss cap) are enforced
 at the executor layer for all strategies and reset at UTC midnight. The H4
 frame is cached for 15 minutes per executor, so MT5 API load stays flat.

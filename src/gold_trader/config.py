@@ -124,8 +124,24 @@ class StochConfig:
     oversold: float = 20.0    # reject shorts at/below this %K
 
 
-_STRATEGY_NAMES = ("donchian", "fibonacci", "macd")
+@dataclass
+class BreadthConfig:
+    """Market-breadth regime filter (net new highs across a symbol universe).
 
+    Breadth is precomputed from the whole universe (US single-name stocks) as
+    #symbols making a new `lookback`-bar high minus #making a new low, per
+    timestamp. When `use` is on it gates entries as a regime filter: a long is
+    allowed only when breadth > min_net (broad strength), a short only when
+    breadth < -min_net (broad weakness). Off by default. Only meaningful for
+    symbols that belong to the universe the breadth was built from; the series
+    is injected by the runner (run_backtest's breadth arg), not per-YAML.
+    """
+    use: bool = False
+    lookback: int = 100   # bars defining a "new high / new low"
+    min_net: float = 0.0  # required |net breadth| (0 -> simple majority)
+
+
+_STRATEGY_NAMES = ("donchian", "fibonacci", "macd")
 
 @dataclass
 class NotifyConfig:
@@ -150,6 +166,7 @@ class Config:
     fibonacci: FibonacciConfig = field(default_factory=FibonacciConfig)
     macd: MacdConfig = field(default_factory=MacdConfig)
     stoch: StochConfig = field(default_factory=StochConfig)
+    breadth: BreadthConfig = field(default_factory=BreadthConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     filters: FilterConfig = field(default_factory=FilterConfig)
     daily_guard: DailyGuardConfig = field(default_factory=DailyGuardConfig)
@@ -199,6 +216,7 @@ class Config:
             fibonacci=FibonacciConfig(**(raw.get("fibonacci") or {})),
             macd=MacdConfig(**(raw.get("macd") or {})),
             stoch=StochConfig(**(raw.get("stoch") or {})),
+            breadth=BreadthConfig(**(raw.get("breadth") or {})),
             risk=RiskConfig(**(raw.get("risk") or {})),
             filters=FilterConfig(**(raw.get("filters") or {})),
             daily_guard=DailyGuardConfig(**(raw.get("daily_guard") or {})),
