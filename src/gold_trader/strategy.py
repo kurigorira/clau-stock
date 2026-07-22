@@ -116,6 +116,38 @@ def _stoch_k(df: pd.DataFrame, k: int, smooth: int) -> pd.Series:
     return raw_k.rolling(smooth).mean()
 
 
+def _regression_trend(close: pd.Series, length: int) -> tuple[pd.Series, pd.Series]:
+    """Rolling least-squares fit of a straight line to the last `length` closes.
+
+    Returns (slope_pct, r2), both aligned to `close`:
+      * slope_pct — the fitted slope expressed as a fraction of the line's
+        end-value per bar, so it is comparable across price scales.
+      * r2 — coefficient of determination in [0, 1] (how linear the window is).
+
+    Fully vectorised: within each window x runs 0..length-1, so the x-moments
+    are constants and only the y-moments roll. Every window ends at the current
+    bar, so no future data enters (read only on the last closed bar, like %K).
+    """
+    n = int(length)
+    y = close.astype(float)
+    j = pd.Series(np.arange(len(y), dtype=float), index=y.index)  # absolute bar idx
+    Sy = y.rolling(n).sum()
+    Syy = (y * y).rolling(n).sum()
+    Sjy = (j * y).rolling(n).sum()
+    j0 = j - (n - 1)                       # absolute index of each window's start
+    Sxy = Sjy - j0 * Sy                    # cross-moment in window coords (x=0..n-1)
+    Sx = n * (n - 1) / 2.0
+    Sxx = (n - 1) * n * (2 * n - 1) / 6.0
+    denom = n * Sxx - Sx * Sx
+    slope = (n * Sxy - Sx * Sy) / denom    # price per bar
+    line_end = Sy / n + slope * (n - 1) / 2.0   # fitted value at the last bar
+    sst = Syy - Sy * Sy / n
+    ssr = slope * slope * (Sxx - Sx * Sx / n)
+    r2 = (ssr / sst.replace(0.0, np.nan)).clip(0.0, 1.0)
+    slope_pct = slope / line_end.replace(0.0, np.nan)
+    return slope_pct, r2
+
+
 def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     out = df.copy()
     out["ema_trend"] = _ema(out["close"], cfg.trend.ema_length)
@@ -144,6 +176,11 @@ def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     # Shared stochastic gate: computed for whichever strategy runs when enabled.
     if cfg.stoch.use:
         out["stoch_k"] = _stoch_k(out, cfg.stoch.k, cfg.stoch.smooth)
+    # Shared regression-trendline gate: only computed when enabled.
+    if cfg.trendline.use:
+        out["tl_slope"], out["tl_r2"] = _regression_trend(
+            out["close"], cfg.trendline.length
+        )
     out["vol_sma"] = out["volume"].rolling(fib.vol_sma_length).mean().shift(1)
     return out
 
@@ -161,6 +198,24 @@ def stoch_blocks(side: str, bar: pd.Series, cfg: Config) -> bool:
     if side == "buy":
         return stoch >= cfg.stoch.overbought
     return stoch <= cfg.stoch.oversold
+
+
+def trendline_blocks(side: str, bar: pd.Series, cfg: Config) -> bool:
+    """True if the regression-trendline gate rejects this entry.
+
+    Blocks a long unless the trendline both rises (fractional slope per bar >
+    slope_min) and fits cleanly (R² >= r2_min); mirror-image for a short. A NaN
+    (warm-up) or missing column is "unconfirmed" and blocks, matching the
+    stochastic gate. Callers must only invoke this when cfg.trendline.use is on."""
+    slope = float(bar["tl_slope"]) if "tl_slope" in bar else float("nan")
+    r2 = float(bar["tl_r2"]) if "tl_r2" in bar else float("nan")
+    if np.isnan(slope) or np.isnan(r2):
+        return True
+    if r2 < cfg.trendline.r2_min:
+        return True
+    if side == "buy":
+        return not (slope > cfg.trendline.slope_min)
+    return not (slope < -cfg.trendline.slope_min)
 
 
 def evaluate_last_bar(
@@ -225,11 +280,15 @@ def evaluate_last_bar(
             return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
         if cfg.stoch.use and stoch_blocks("buy", bar, cfg):
             return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
+        if cfg.trendline.use and trendline_blocks("buy", bar, cfg):
+            return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
         return Signal("buy", close - stop_dist, close, atr, high_ref, low_ref, h4_dir)
     if close < low_ref - buffer and close < ema and ema_slope < 0:
         if mtf_on and h4_dir != -1:
             return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
         if cfg.stoch.use and stoch_blocks("sell", bar, cfg):
+            return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
+        if cfg.trendline.use and trendline_blocks("sell", bar, cfg):
             return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
         return Signal("sell", close + stop_dist, close, atr, high_ref, low_ref, h4_dir)
     return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
@@ -354,6 +413,8 @@ def evaluate_fib_entry(
     side = "buy" if dir_h4 == 1 else "sell"
     if cfg.stoch.use and stoch_blocks(side, bar, cfg):
         return no_trade
+    if cfg.trendline.use and trendline_blocks(side, bar, cfg):
+        return no_trade
 
     ext = fib.extension_tp - 1.0
     if dir_h4 == 1:
@@ -415,6 +476,8 @@ def evaluate_macd_entry(
 
     # Shared stochastic confirmation: don't chase an already-extended move.
     if cfg.stoch.use and stoch_blocks("buy" if cross_up else "sell", bar, cfg):
+        return Signal(None, 0.0, close, atr)
+    if cfg.trendline.use and trendline_blocks("buy" if cross_up else "sell", bar, cfg):
         return Signal(None, 0.0, close, atr)
 
     dir_h4 = 0

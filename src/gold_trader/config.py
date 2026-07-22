@@ -125,6 +125,26 @@ class StochConfig:
 
 
 @dataclass
+class TrendlineConfig:
+    """Least-squares regression-trendline confirmation, shared by every strategy.
+
+    A straight line is fit to the last `length` closes (ending at the current
+    closed bar — no look-ahead). Two scale-free quantities gate the entry: the
+    line's slope as a *fraction of price per bar* (so one threshold works across
+    a 30-dollar and a 300-dollar stock) and the fit's R² (how linear the trend
+    actually is). When `use` is on, a long is allowed only when the trendline
+    rises (slope > slope_min) and fits well (R² >= r2_min); a short only when it
+    falls. r2_min is the distinctive knob — it demands a *clean* trend, not just
+    a direction, which plain EMA slope can't express. Off by default, so all
+    strategies are unchanged.
+    """
+    use: bool = False
+    length: int = 50      # regression window in bars
+    slope_min: float = 0.0  # required |fractional slope per bar| (0 = any direction)
+    r2_min: float = 0.0     # required regression R^2 in [0,1] (0 = ignore fit quality)
+
+
+@dataclass
 class BreadthConfig:
     """Market-breadth regime filter (net new highs across a symbol universe).
 
@@ -166,6 +186,7 @@ class Config:
     fibonacci: FibonacciConfig = field(default_factory=FibonacciConfig)
     macd: MacdConfig = field(default_factory=MacdConfig)
     stoch: StochConfig = field(default_factory=StochConfig)
+    trendline: TrendlineConfig = field(default_factory=TrendlineConfig)
     breadth: BreadthConfig = field(default_factory=BreadthConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     filters: FilterConfig = field(default_factory=FilterConfig)
@@ -216,6 +237,7 @@ class Config:
             fibonacci=FibonacciConfig(**(raw.get("fibonacci") or {})),
             macd=MacdConfig(**(raw.get("macd") or {})),
             stoch=StochConfig(**(raw.get("stoch") or {})),
+            trendline=TrendlineConfig(**(raw.get("trendline") or {})),
             breadth=BreadthConfig(**(raw.get("breadth") or {})),
             risk=RiskConfig(**(raw.get("risk") or {})),
             filters=FilterConfig(**(raw.get("filters") or {})),

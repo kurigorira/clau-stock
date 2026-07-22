@@ -182,6 +182,39 @@ thresholds cut the big winners and total PnL falls even as win% rises — so
 judge on PnL, not win% alone. Presets `macd_stoch.yaml` / `macd_stoch_h4.yaml`
 show the section wired onto the MACD examples.
 
+### Regression-trendline filter (`trendline:`) — trade only clean trends
+
+A shared confirmation gate (like `stoch:`) built on a least-squares line fit to
+the last `length` closes. Two scale-free quantities gate the entry: the line's
+slope as a **fraction of price per bar** (one threshold works on a $30 and a
+$300 stock) and the fit's **R²** (how linear the window actually is). A long is
+admitted only when the trendline rises (`slope > slope_min`) and fits well
+(`R² >= r2_min`); a short only when it falls.
+
+```yaml
+trendline:
+  use: true
+  length: 50       # regression window in bars
+  slope_min: 0.0   # required |fractional slope/bar| (0 = any direction)
+  r2_min: 0.5      # required R^2 in [0,1] (0 = ignore fit quality)
+```
+
+`r2_min` is the distinctive knob — it demands price is genuinely *tracking a
+line*, not merely pointed the right way, which plain EMA slope can't express.
+The columns (`tl_slope`, `tl_r2`) are computed only when `use` is on, with no
+look-ahead (each window ends at the current closed bar), so the gate applies
+identically in backtest and live for all three strategies. Off by default.
+
+```
+python scripts/ab_trendline.py --strategy donchian
+python scripts/ab_trendline.py --strategy fibonacci
+python scripts/ab_trendline.py --strategy donchian --sweep-r2 0,0.3,0.5,0.7,0.9
+```
+
+The sweep prints one AGGREGATE row per `r2_min`: tightening it trims trades
+(only the cleanest trends survive), so read PnL, not win% alone — the same
+trade-off caveat as the stochastic gate.
+
 ### Market-breadth regime filter (`breadth:`) — US-stock new highs vs new lows
 
 A cross-sectional regime gate. Unlike every other filter (which reads one

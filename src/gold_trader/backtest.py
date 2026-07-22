@@ -15,6 +15,7 @@ from .strategy import (
     evaluate_macd_entry,
     should_exit_macd,
     stoch_blocks,
+    trendline_blocks,
 )
 
 
@@ -131,6 +132,7 @@ def run_backtest(
             if (
                 close > hi + buffer and close > ema and ema_slope > 0
                 and not (gate and stoch_blocks("buy", bar, cfg))
+                and not (cfg.trendline.use and trendline_blocks("buy", bar, cfg))
                 and not (bmap is not None and breadth_blocks("buy", bval, cfg.breadth.min_net))
             ):
                 side = "buy"
@@ -141,6 +143,7 @@ def run_backtest(
             elif (
                 close < lo - buffer and close < ema and ema_slope < 0
                 and not (gate and stoch_blocks("sell", bar, cfg))
+                and not (cfg.trendline.use and trendline_blocks("sell", bar, cfg))
                 and not (bmap is not None and breadth_blocks("sell", bval, cfg.breadth.min_net))
             ):
                 side = "sell"
