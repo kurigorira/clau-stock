@@ -137,25 +137,45 @@ empirically. `config/macd_example.yaml` (H4-filtered) and `config/macd_pure.yaml
 MACD params live under `macd:` and are independent of the `fibonacci:` MACD
 filter, so tuning one never perturbs the other.
 
-Optional **stochastic confirmation** (`macd.use_stoch: true`) targets MACD's
-main weakness — the zero-cross fires the instant momentum turns, so it tends to
-chase already-extended moves. The gate rejects a long once %K ≥
-`stoch_overbought` and a short once %K ≤ `stoch_oversold`, so entries wait for
-room to run. Off by default (pure MACD unchanged). Presets `macd_stoch.yaml`
-(pure) and `macd_stoch_h4.yaml` (with H4) are the A/B partners of the base
-presets. Whether it actually lifts win rate is an empirical question — measure
-it fleet-wide, don't assume:
+### Stochastic confirmation (`stoch:`) — shared win-rate filter
+
+An optional stochastic-oscillator gate that **any** strategy can switch on via
+the shared `stoch:` config section (off by default — every strategy is
+unchanged until you set `stoch.use: true`). It rejects an entry that would be
+chasing an already-exhausted move: a long once slow %K ≥ `overbought`, a short
+once %K ≤ `oversold`. What that means per strategy:
+
+- **donchian** — skips breakouts firing straight into overbought (the ones
+  most prone to immediate reversal)
+- **fibonacci** — skips shallow pullbacks whose oscillator never actually came
+  down, keeping only entries where price genuinely retraced
+- **macd** — skips late zero-crosses that fire after the move already ran
+
+```yaml
+stoch:
+  use: true
+  k: 14           # %K lookback
+  smooth: 3       # slow %K smoothing
+  overbought: 80  # reject longs at/above this %K
+  oversold: 20    # reject shorts at/below this %K
+```
+
+Whether it lifts win rate is empirical — measure it, don't assume. `ab_stoch.py`
+runs each strategy twice (gate off vs on) on identical data across the fleet:
 
 ```
-python scripts/ab_stoch.py            # base vs stoch on every data/*_h1.csv
-python scripts/ab_stoch.py --h4       # both legs H4-filtered
-python scripts/ab_stoch.py --overbought 70 --oversold 30   # sweep the gate
+python scripts/ab_stoch.py --strategy donchian      # base vs +stoch, all data
+python scripts/ab_stoch.py --strategy fibonacci
+python scripts/ab_stoch.py --strategy macd
+python scripts/ab_stoch.py --strategy donchian --overbought 70 --oversold 30
 ```
 
 The **AGGREGATE** row (trade-weighted win rate and total PnL, base → stoch) is
-the verdict. Expect a trade-off: the filter usually trims trades and can lift
-win rate, but because MACD's profit rides a few large trend runs, over-tight
-thresholds cut the big winners and PnL falls even as win% rises.
+the verdict. Expect a trade-off: the gate trims trades and often lifts win
+rate, but because trend-following profit rides a few large runs, over-tight
+thresholds cut the big winners and total PnL falls even as win% rises — so
+judge on PnL, not win% alone. Presets `macd_stoch.yaml` / `macd_stoch_h4.yaml`
+show the section wired onto the MACD examples.
 
 Daily-guard limits (consecutive losses, daily realized-loss cap) are enforced
 at the executor layer for all strategies and reset at UTC midnight. The H4

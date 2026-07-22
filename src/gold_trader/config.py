@@ -104,17 +104,24 @@ class MacdConfig:
     signal: int = 9
     use_h4_filter: bool = True   # false = pure MACD, no trend gate
 
-    # Optional stochastic confirmation. The MACD zero-cross fires the instant
-    # momentum turns, which often means chasing an already-extended move; the
-    # stochastic gate rejects a long whose %K is already overbought (and a
-    # short whose %K is already oversold), so entries wait for room to run.
-    # Off by default -> pure MACD behaviour is unchanged.
-    use_stoch: bool = False
-    stoch_k: int = 14            # %K lookback
-    stoch_d: int = 3            # %D smoothing (SMA of slow %K)
-    stoch_smooth: int = 3      # slow %K smoothing (SMA of raw %K)
-    stoch_overbought: float = 80.0  # reject longs at/above this %K
-    stoch_oversold: float = 20.0    # reject shorts at/below this %K
+
+@dataclass
+class StochConfig:
+    """Optional stochastic-oscillator confirmation, shared by every strategy.
+
+    When `use` is on, an entry is rejected once the trade would be chasing an
+    exhausted move: a long is blocked when slow %K >= overbought, a short when
+    %K <= oversold. The intent differs slightly per strategy but the gate is
+    the same — donchian skips breakouts firing into overbought, fibonacci skips
+    shallow pullbacks whose oscillator never came down, macd skips late
+    zero-crosses. Off by default, so all three strategies are unchanged.
+    """
+    use: bool = False
+    k: int = 14            # %K lookback
+    d: int = 3            # %D smoothing (SMA of slow %K) — reserved for %D crosses
+    smooth: int = 3      # slow %K smoothing (SMA of raw %K)
+    overbought: float = 80.0  # reject longs at/above this %K
+    oversold: float = 20.0    # reject shorts at/below this %K
 
 
 _STRATEGY_NAMES = ("donchian", "fibonacci", "macd")
@@ -142,6 +149,7 @@ class Config:
     breakout: BreakoutConfig = field(default_factory=BreakoutConfig)
     fibonacci: FibonacciConfig = field(default_factory=FibonacciConfig)
     macd: MacdConfig = field(default_factory=MacdConfig)
+    stoch: StochConfig = field(default_factory=StochConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     filters: FilterConfig = field(default_factory=FilterConfig)
     daily_guard: DailyGuardConfig = field(default_factory=DailyGuardConfig)
@@ -190,6 +198,7 @@ class Config:
             breakout=BreakoutConfig(**(raw.get("breakout") or {})),
             fibonacci=FibonacciConfig(**(raw.get("fibonacci") or {})),
             macd=MacdConfig(**(raw.get("macd") or {})),
+            stoch=StochConfig(**(raw.get("stoch") or {})),
             risk=RiskConfig(**(raw.get("risk") or {})),
             filters=FilterConfig(**(raw.get("filters") or {})),
             daily_guard=DailyGuardConfig(**(raw.get("daily_guard") or {})),

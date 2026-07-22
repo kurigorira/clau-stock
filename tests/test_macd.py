@@ -246,26 +246,26 @@ def test_config_macd_presets_parse():
         assert cfg.strategy == "macd"
     assert Config.from_yaml(config_dir / "macd_pure.yaml").macd.use_h4_filter is False
     assert Config.from_yaml(config_dir / "macd_example.yaml").macd.use_h4_filter is True
-    assert Config.from_yaml(config_dir / "macd_stoch.yaml").macd.use_stoch is True
+    assert Config.from_yaml(config_dir / "macd_stoch.yaml").stoch.use is True
 
 
 # ---------------------------------------------------------------------------
-# stochastic confirmation gate
+# stochastic confirmation gate (shared cfg.stoch — see also test_stoch.py)
 # ---------------------------------------------------------------------------
 
 
 def _macd_stoch_cfg(overbought: float, oversold: float) -> Config:
     cfg = _macd_cfg()
-    cfg.macd.use_stoch = True
-    cfg.macd.stoch_overbought = overbought
-    cfg.macd.stoch_oversold = oversold
+    cfg.stoch.use = True
+    cfg.stoch.overbought = overbought
+    cfg.stoch.oversold = oversold
     return cfg
 
 
 def test_stoch_gate_off_by_default():
     # a plain macd Config must not compute stoch_k (pure behaviour unchanged)
     cfg = _macd_cfg()
-    assert cfg.macd.use_stoch is False
+    assert cfg.stoch.use is False
     df = _frame_from_close(_bullish_cross_series(), cfg)
     assert "stoch_k" not in df.columns
 

@@ -9,12 +9,14 @@ macd:
   slow: 26
   signal: 9
   use_h4_filter: true
-  use_stoch: true
-  stoch_k: 14
-  stoch_d: 3
-  stoch_smooth: 3
-  stoch_overbought: 80.0
-  stoch_oversold: 20.0
+
+stoch:
+  use: true
+  k: 14
+  d: 3
+  smooth: 3
+  overbought: 80.0
+  oversold: 20.0
 
 risk:
   per_trade_pct: 0.3

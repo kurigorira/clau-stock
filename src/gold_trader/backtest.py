@@ -8,7 +8,13 @@ import pandas as pd
 
 from .config import Config
 from .data import resample_ohlcv
-from .strategy import add_indicators, evaluate_fib_entry, evaluate_macd_entry, should_exit_macd
+from .strategy import (
+    add_indicators,
+    evaluate_fib_entry,
+    evaluate_macd_entry,
+    should_exit_macd,
+    stoch_blocks,
+)
 
 
 @dataclass
@@ -104,13 +110,20 @@ def run_backtest(
             if adx < f.adx_min:
                 continue
             buffer = buffer_mult * atr
-            if close > hi + buffer and close > ema and ema_slope > 0:
+            gate = cfg.stoch.use  # shared stochastic confirmation, off by default
+            if (
+                close > hi + buffer and close > ema and ema_slope > 0
+                and not (gate and stoch_blocks("buy", bar, cfg))
+            ):
                 side = "buy"
                 entry_price = close + slippage_price
                 entry_time = bar.name
                 entry_i = i
                 stop = close - stop_mult * atr
-            elif close < lo - buffer and close < ema and ema_slope < 0:
+            elif (
+                close < lo - buffer and close < ema and ema_slope < 0
+                and not (gate and stoch_blocks("sell", bar, cfg))
+            ):
                 side = "sell"
                 entry_price = close - slippage_price
                 entry_time = bar.name

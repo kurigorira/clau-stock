@@ -141,10 +141,26 @@ def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     else:
         mf, ms, mg = fib.macd_fast, fib.macd_slow, fib.macd_signal
     out["macd_hist"] = _macd_hist(out["close"], mf, ms, mg)
-    if cfg.strategy == "macd" and cfg.macd.use_stoch:
-        out["stoch_k"] = _stoch_k(out, cfg.macd.stoch_k, cfg.macd.stoch_smooth)
+    # Shared stochastic gate: computed for whichever strategy runs when enabled.
+    if cfg.stoch.use:
+        out["stoch_k"] = _stoch_k(out, cfg.stoch.k, cfg.stoch.smooth)
     out["vol_sma"] = out["volume"].rolling(fib.vol_sma_length).mean().shift(1)
     return out
+
+
+def stoch_blocks(side: str, bar: pd.Series, cfg: Config) -> bool:
+    """True if the shared stochastic gate rejects this entry.
+
+    Rejects a long once slow %K >= overbought and a short once %K <= oversold,
+    so an entry never chases an already-exhausted move. A NaN %K (warm-up) or a
+    missing column is treated as "unconfirmed" and blocks the entry. Callers
+    must only invoke this when cfg.stoch.use is on (the column exists then)."""
+    stoch = float(bar["stoch_k"]) if "stoch_k" in bar else float("nan")
+    if np.isnan(stoch):
+        return True
+    if side == "buy":
+        return stoch >= cfg.stoch.overbought
+    return stoch <= cfg.stoch.oversold
 
 
 def evaluate_last_bar(
@@ -207,9 +223,13 @@ def evaluate_last_bar(
     if close > high_ref + buffer and close > ema and ema_slope > 0:
         if mtf_on and h4_dir != 1:
             return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
+        if cfg.stoch.use and stoch_blocks("buy", bar, cfg):
+            return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
         return Signal("buy", close - stop_dist, close, atr, high_ref, low_ref, h4_dir)
     if close < low_ref - buffer and close < ema and ema_slope < 0:
         if mtf_on and h4_dir != -1:
+            return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
+        if cfg.stoch.use and stoch_blocks("sell", bar, cfg):
             return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
         return Signal("sell", close + stop_dist, close, atr, high_ref, low_ref, h4_dir)
     return Signal(None, 0.0, close, atr, high_ref, low_ref, h4_dir)
@@ -331,6 +351,10 @@ def evaluate_fib_entry(
         if not momentum_ok:
             return no_trade
 
+    side = "buy" if dir_h4 == 1 else "sell"
+    if cfg.stoch.use and stoch_blocks(side, bar, cfg):
+        return no_trade
+
     ext = fib.extension_tp - 1.0
     if dir_h4 == 1:
         stop = swing_low - fib.stop_atr_buffer * atr
@@ -389,17 +413,9 @@ def evaluate_macd_entry(
     if not (cross_up or cross_down):
         return Signal(None, 0.0, close, atr)
 
-    # Stochastic confirmation: don't chase an already-extended move. A long is
-    # rejected once %K is overbought, a short once %K is oversold. A NaN %K
-    # (warm-up) is treated as "no confirmation" and blocks the entry.
-    if cfg.macd.use_stoch:
-        stoch = float(bar["stoch_k"]) if "stoch_k" in bar else float("nan")
-        if np.isnan(stoch):
-            return Signal(None, 0.0, close, atr)
-        if cross_up and stoch >= cfg.macd.stoch_overbought:
-            return Signal(None, 0.0, close, atr)
-        if cross_down and stoch <= cfg.macd.stoch_oversold:
-            return Signal(None, 0.0, close, atr)
+    # Shared stochastic confirmation: don't chase an already-extended move.
+    if cfg.stoch.use and stoch_blocks("buy" if cross_up else "sell", bar, cfg):
+        return Signal(None, 0.0, close, atr)
 
     dir_h4 = 0
     if cfg.macd.use_h4_filter and cfg.trend.higher_timeframe:

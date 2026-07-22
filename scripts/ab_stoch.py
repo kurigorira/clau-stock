@@ -1,23 +1,26 @@
-"""A/B test: does the stochastic gate improve MACD's win rate, fleet-wide?
+"""A/B test: does the stochastic gate improve a strategy's win rate, fleet-wide?
 
-For every data/<symbol>_h1.csv this runs the MACD strategy twice on identical
-data — once with use_stoch=false (base) and once with use_stoch=true — and
+For every data/<symbol>_h1.csv this runs the chosen strategy twice on identical
+data — once with stoch.use=false (base) and once with stoch.use=true — and
 prints win-rate and PnL side by side, then an aggregate verdict.
 
 The stochastic gate rejects longs whose %K is already overbought and shorts
-whose %K is already oversold (see MacdConfig). The hypothesis under test:
-"waiting for room to run lifts win rate." The aggregate row is what answers
-it — a single symbol proves nothing.
+whose %K is already oversold (see StochConfig). Interpretation per strategy:
+donchian skips breakouts firing into overbought; fibonacci skips shallow
+pullbacks whose oscillator never came down; macd skips late zero-crosses. The
+hypothesis under test: "waiting for room to run lifts win rate." The AGGREGATE
+row answers it — a single symbol proves nothing.
 
 Base params come from the matching fib_<slug>.yaml (so ATR%/ADX filters match
-the main comparison), then strategy is forced to macd. --h4 turns the H4 trend
-filter on for both legs; thresholds are tunable so you can sweep the gate.
+the main comparison), then strategy is forced to --strategy. Thresholds are
+tunable so you can sweep the gate.
 
 Usage:
-    python scripts/ab_stoch.py                    # all data/*.csv, pure MACD
-    python scripts/ab_stoch.py --h4               # both legs H4-filtered
+    python scripts/ab_stoch.py                          # donchian, all data
+    python scripts/ab_stoch.py --strategy fibonacci     # fib base vs +stoch
+    python scripts/ab_stoch.py --strategy macd
     python scripts/ab_stoch.py --overbought 70 --oversold 30
-    python scripts/ab_stoch.py data/xauusd_h1.csv
+    python scripts/ab_stoch.py --strategy fibonacci data/xauusd_h1.csv
 """
 from __future__ import annotations
 
@@ -45,17 +48,17 @@ def _config_for_csv(csv_path: Path) -> Path | None:
 def _base_cfg(csv_path: Path, args) -> Config:
     matched = _config_for_csv(csv_path)
     cfg = Config.from_yaml(matched) if matched else Config()
-    cfg.strategy = "macd"
-    cfg.macd.use_h4_filter = args.h4
-    cfg.macd.stoch_overbought = args.overbought
-    cfg.macd.stoch_oversold = args.oversold
+    cfg.strategy = args.strategy
+    cfg.stoch.overbought = args.overbought
+    cfg.stoch.oversold = args.oversold
     return cfg
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="MACD stochastic-gate A/B")
+    p = argparse.ArgumentParser(description="stochastic-gate A/B for any strategy")
+    p.add_argument("--strategy", default="donchian",
+                   choices=("donchian", "fibonacci", "macd"))
     p.add_argument("--data-dir", default="data")
-    p.add_argument("--h4", action="store_true", help="H4 trend filter on both legs")
     p.add_argument("--overbought", type=float, default=80.0)
     p.add_argument("--oversold", type=float, default=20.0)
     p.add_argument("csvs", nargs="*", help="explicit CSVs (default: data/*_h1.csv)")
@@ -70,8 +73,8 @@ def main() -> None:
         f"{'symbol':<14} | {'n':>4} {'win%':>6} {'pnl':>11}  (base) | "
         f"{'n':>4} {'win%':>6} {'pnl':>11}  (stoch) | {'Δwin':>6} {'Δpnl':>11}"
     )
-    print(f"# MACD stochastic-gate A/B  (h4={args.h4}, "
-          f"OB={args.overbought:g}/OS={args.oversold:g})")
+    print(f"# {args.strategy} stochastic-gate A/B  "
+          f"(OB={args.overbought:g}/OS={args.oversold:g})")
     print(hdr)
     print("-" * len(hdr))
 
@@ -82,8 +85,8 @@ def main() -> None:
     for csv_path in csvs:
         symbol = csv_path.stem.replace("_h1", "")
         df = load_csv(csv_path)
-        base = copy.deepcopy(_base_cfg(csv_path, args)); base.macd.use_stoch = False
-        stoch = copy.deepcopy(_base_cfg(csv_path, args)); stoch.macd.use_stoch = True
+        base = copy.deepcopy(_base_cfg(csv_path, args)); base.stoch.use = False
+        stoch = copy.deepcopy(_base_cfg(csv_path, args)); stoch.stoch.use = True
         try:
             rb = run_backtest(df, base)
             rs = run_backtest(df, stoch)
