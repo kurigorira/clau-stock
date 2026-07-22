@@ -54,6 +54,44 @@ def _base_cfg(csv_path: Path, args) -> Config:
     return cfg
 
 
+def _aggregate(csvs, args, overbought: float, oversold: float, use_stoch: bool):
+    """Run every CSV once and return (n, trade-weighted win rate, total PnL)."""
+    wins = n = 0
+    pnl = 0.0
+    for csv_path in csvs:
+        cfg = _base_cfg(csv_path, args)
+        cfg.stoch.overbought = overbought
+        cfg.stoch.oversold = oversold
+        cfg.stoch.use = use_stoch
+        try:
+            r = run_backtest(load_csv(csv_path), cfg)
+        except Exception:  # noqa: BLE001
+            continue
+        wins += round(r["win_rate"] * r["n"]); n += r["n"]
+        pnl += r["total_pnl_price"]
+    return n, (wins / n if n else 0.0), pnl
+
+
+def _run_sweep(csvs, args) -> None:
+    """Print base once, then one AGGREGATE row per --sweep threshold, so the
+    win% / PnL trade-off across gate tightness is a single readable curve."""
+    thresholds = [float(x) for x in args.sweep.split(",") if x.strip()]
+    bn, bw, bp = _aggregate(csvs, args, 100.0, 0.0, use_stoch=False)
+    print(f"# {args.strategy} stochastic-gate SWEEP  "
+          f"(base = no gate; each row: oversold = 100 - overbought)")
+    hdr = f"{'OB/OS':>9} | {'n':>5} {'win%':>6} {'pnl':>12} | {'Δn':>5} {'Δwin':>6} {'Δpnl':>12}"
+    print(hdr)
+    print("-" * len(hdr))
+    print(f"{'base':>9} | {bn:>5} {bw:>6.1%} {bp:>12.2f} | {'':>5} {'':>6} {'':>12}")
+    for ob in thresholds:
+        os_ = 100.0 - ob
+        n, w, p = _aggregate(csvs, args, ob, os_, use_stoch=True)
+        print(
+            f"{ob:>4.0f}/{os_:<4.0f} | {n:>5} {w:>6.1%} {p:>12.2f} | "
+            f"{n - bn:>+5} {w - bw:>+6.1%} {p - bp:>+12.2f}"
+        )
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="stochastic-gate A/B for any strategy")
     p.add_argument("--strategy", default="donchian",
@@ -61,6 +99,10 @@ def main() -> None:
     p.add_argument("--data-dir", default="data")
     p.add_argument("--overbought", type=float, default=80.0)
     p.add_argument("--oversold", type=float, default=20.0)
+    p.add_argument("--sweep", default=None,
+                   help="comma list of overbought thresholds, e.g. '80,85,90,95'; "
+                        "each row uses oversold=100-overbought. Prints one "
+                        "AGGREGATE line per threshold (a win%%/PnL curve).")
     p.add_argument("csvs", nargs="*", help="explicit CSVs (default: data/*_h1.csv)")
     args = p.parse_args()
 
@@ -68,6 +110,10 @@ def main() -> None:
     if not csvs:
         sys.stderr.write(f"no CSVs in {args.data_dir}/ — run dump_history.py first\n")
         sys.exit(2)
+
+    if args.sweep is not None:
+        _run_sweep(csvs, args)
+        return
 
     hdr = (
         f"{'symbol':<14} | {'n':>4} {'win%':>6} {'pnl':>11}  (base) | "

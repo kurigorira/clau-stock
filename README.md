@@ -168,7 +168,12 @@ python scripts/ab_stoch.py --strategy donchian      # base vs +stoch, all data
 python scripts/ab_stoch.py --strategy fibonacci
 python scripts/ab_stoch.py --strategy macd
 python scripts/ab_stoch.py --strategy donchian --overbought 70 --oversold 30
+python scripts/ab_stoch.py --strategy fibonacci --sweep 80,85,90,95,98
 ```
+
+`--sweep` prints one AGGREGATE row per threshold (oversold = 100 − overbought),
+so the win% / PnL curve across gate tightness is readable at a glance — the fast
+way to find the sweet spot instead of re-running one threshold at a time.
 
 The **AGGREGATE** row (trade-weighted win rate and total PnL, base → stoch) is
 the verdict. Expect a trade-off: the gate trims trades and often lifts win
