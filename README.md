@@ -243,8 +243,18 @@ python scripts/ab_breadth.py --strategy fibonacci
 python scripts/ab_breadth.py --strategy donchian --sweep 0,1,2,3,5   # min_net curve
 ```
 
-Live wiring (the executor computing breadth from all US-stock feeds each poll)
-is a separate step — enable it only if the backtest AGGREGATE row justifies it.
+**Live:** when `breadth.use` is on, the executor auto-discovers the broker's
+US-stock symbols (venue duplicates like `NVIDIA.24h` deduped to the plain
+feed), computes net breadth once per closed bar (cached process-wide, so a
+fleet of US-stock executors fetches the universe once, not per symbol) and
+gates entries with the same `breadth_blocks` rule as the backtest. Unknown
+breadth (discovery failure, no US stocks on the broker) never blocks — it
+degrades to base behaviour with a warning. `config/macd_breadth.yaml` is the
+out-of-sample-validated recipe (macd, `min_net: 1`): selected on the first 60%
+of the data by train PnL, it held up on the held-out 40% (win 32%→39%, PnL
++21→+32 — `scripts/oos_breadth.py`). The donchian/fib combinations did NOT
+clear that bar (fib: directionally positive but ~6 test trades; donchian: loss
+reduction only), so only the macd recipe ships as a preset.
 
 Daily-guard limits (consecutive losses, daily realized-loss cap) are enforced
 at the executor layer for all strategies and reset at UTC midnight. The H4

@@ -99,6 +99,15 @@ def fetch_ohlcv(symbol: str, tf_name: str, n_bars: int) -> pd.DataFrame:
     return df[["open", "high", "low", "close", "volume"]]
 
 
+def list_symbols() -> list[str]:
+    """Names of every symbol the terminal knows (visible or not).
+
+    Used by the live breadth gate to auto-discover the US-stock universe on
+    this broker's naming scheme (see breadth.discover_universe)."""
+    mt5 = _mt5()
+    return [s.name for s in (mt5.symbols_get() or [])]
+
+
 def symbol_meta(symbol: str) -> dict:
     mt5 = _mt5()
     info = mt5.symbol_info(symbol)

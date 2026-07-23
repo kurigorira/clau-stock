@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from . import mt5_client, notify
+from .breadth import breadth_blocks, discover_universe, live_net_breadth
 from .config import Config
 from .risk import position_volume
 from .strategy import (
@@ -28,6 +29,11 @@ _DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 # copy_rates_from_pos calls per executor by ~30x at poll_seconds=30.
 _H4_REFRESH_SEC = 900
 
+# One breadth value per (bar_time, lookback), shared by every executor in the
+# process so 30+ US-stock executors don't each re-fetch the whole universe.
+# Only the newest bar's entry is kept (older bars can never be asked for again).
+_BREADTH_CACHE: dict = {}
+
 
 class Executor:
     def __init__(self, cfg: Config, log: logging.Logger, account: str | None = None):
@@ -37,6 +43,7 @@ class Executor:
         self._last_bar_time: pd.Timestamp | None = None
         self._h4_cache: pd.DataFrame | None = None
         self._h4_cache_at: float = 0.0
+        self._breadth_universe: list[str] | None = None  # None = not discovered yet
 
     def _in_session(self, now: datetime) -> bool:
         s = self.cfg.session
@@ -73,6 +80,44 @@ class Executor:
         self._h4_cache = df
         self._h4_cache_at = now
         return df
+
+    def _breadth_value(self, bar_time: pd.Timestamp) -> float | None:
+        """Net US-stock breadth at `bar_time`, or None when unavailable.
+
+        The universe is auto-discovered from the terminal's symbol list once
+        per executor (venue duplicates like NVIDIA.24h deduped); the value is
+        computed once per bar and shared process-wide via _BREADTH_CACHE. None
+        (no universe / discovery failure) means "unknown" — the caller treats
+        it as non-blocking, mirroring the backtest's NaN semantics, so a broken
+        symbol list degrades to base behaviour instead of halting entries.
+        """
+        if self._breadth_universe is None:
+            try:
+                self._breadth_universe = discover_universe(mt5_client.list_symbols())
+            except Exception as exc:  # noqa: BLE001
+                self.log.warning(f"breadth: symbol discovery failed: {exc}")
+                return None
+            if not self._breadth_universe:
+                self.log.warning(
+                    "breadth.use is on but no US-stock symbols found on this "
+                    "broker; gate disabled"
+                )
+            else:
+                self.log.info(
+                    f"breadth universe: {len(self._breadth_universe)} US stocks"
+                )
+        if not self._breadth_universe:
+            return None
+        key = (bar_time, self.cfg.breadth.lookback)
+        if key not in _BREADTH_CACHE:
+            _BREADTH_CACHE.clear()  # older bars can never be asked for again
+            _BREADTH_CACHE[key] = live_net_breadth(
+                mt5_client.fetch_ohlcv,
+                self._breadth_universe,
+                self.cfg.breadth.lookback,
+                bar_time,
+            )
+        return _BREADTH_CACHE[key]
 
     def _ensure_stop_losses(self, closed: pd.DataFrame) -> None:
         """Attach an ATR-based stop to any of our positions missing one."""
@@ -161,6 +206,21 @@ class Executor:
         )
         if signal.side is None or len(positions) >= self.cfg.risk.max_positions:
             return
+
+        # Market-breadth regime gate (OOS-validated on macd): enter only when
+        # the US-stock universe agrees with the trade's direction.
+        if self.cfg.breadth.use:
+            bval = self._breadth_value(bar_time)
+            if bval is not None and breadth_blocks(
+                signal.side, bval, self.cfg.breadth.min_net
+            ):
+                self.log.info(
+                    f"breadth gate: net={bval:+.0f} blocks {signal.side} "
+                    f"(min_net={self.cfg.breadth.min_net:g})"
+                )
+                return
+            if bval is not None:
+                self.log.info(f"breadth gate: net={bval:+.0f} allows {signal.side}")
 
         equity = mt5_client.account_equity()
 

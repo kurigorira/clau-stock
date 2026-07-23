@@ -68,6 +68,60 @@ def compute_breadth(frames: dict[str, pd.DataFrame], lookback: int) -> pd.Series
     return mat.fillna(0).sum(axis=1)          # net breadth per timestamp
 
 
+def discover_universe(names: list[str]) -> list[str]:
+    """Pick the US-stock universe out of a broker's symbol list.
+
+    Filters by is_universe_member, then dedupes venue variants of the same
+    stock ('NVIDIA' vs 'NVIDIA.24h') keeping the shortest name — the plain
+    market-hours feed — so one company never counts twice and off-hours feeds
+    don't skew the count. Order of first appearance is preserved.
+    """
+    best: dict[str, str] = {}
+    order: list[str] = []
+    for name in names:
+        if not is_universe_member(name):
+            continue
+        base = name.lower().split(".")[0]
+        if base not in best:
+            best[base] = name
+            order.append(base)
+        elif len(name) < len(best[base]):
+            best[base] = name
+    return [best[b] for b in order]
+
+
+def live_net_breadth(fetch, symbols: list[str], lookback: int,
+                     bar_time) -> float:
+    """Net new-high count across `symbols` at the closed bar `bar_time`, live.
+
+    `fetch(symbol, "H1", n_bars)` must return an OHLCV frame whose last row is
+    the still-forming bar (mt5_client.fetch_ohlcv's contract). Mirrors
+    compute_breadth's per-timestamp semantics: a symbol contributes +1 when its
+    bar at `bar_time` makes a new `lookback`-bar high, -1 on a new low, and 0
+    when it is stale (last closed bar isn't `bar_time` — halted/lagging feed),
+    short on history, or its fetch fails. Fail-open by design: a degraded feed
+    weakens the signal toward 0 instead of raising.
+    """
+    net = 0
+    for sym in symbols:
+        try:
+            df = fetch(sym, "H1", lookback + 3)
+        except Exception:  # noqa: BLE001 — one bad feed must not kill the gate
+            continue
+        if len(df) < 2:
+            continue
+        closed = df.iloc[:-1]
+        if len(closed) < lookback + 1 or closed.index[-1] != bar_time:
+            continue
+        window = closed.iloc[-(lookback + 1):-1]
+        bar = closed.iloc[-1]
+        if float(bar["high"]) > float(window["high"].max()):
+            net += 1
+        if float(bar["low"]) < float(window["low"].min()):
+            net -= 1
+    return float(net)
+
+
 def breadth_blocks(side: str, value: float, min_net: float) -> bool:
     """True if the breadth regime rejects an entry on `side`.
 
