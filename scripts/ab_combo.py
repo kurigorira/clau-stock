@@ -13,12 +13,19 @@ Restricted to US stocks so every combo is comparable (breadth only means
 anything inside the universe it is built from).
 
 ret%% sums each trade's unlevered return (pnl / entry price, one equal-weight
-unit per trade); ~wk%% divides that by the weeks the data spans. It is a rough
-per-position yardstick for goals like "3%% per week", not an account equity
-curve — position sizing / leverage (risk:) decides account returns.
+unit per trade); ~wk%% divides that by the weeks the data spans. Rows whose
+~wk%% clears --target-wk (default 0.5, the weekly profit goal) are marked. It
+is a rough per-position yardstick, not an account equity curve — position
+sizing / leverage (risk:) decides account returns.
+
+At a 0.5%%/week target transaction costs decide feasibility, so --slippage-bp
+charges every entry AND exit that many basis points of the symbol's median
+price (a spread+commission proxy); rerun with e.g. 5 and see which combos
+survive.
 
 Usage:
     python scripts/ab_combo.py --strategy macd
+    python scripts/ab_combo.py --strategy macd --slippage-bp 5
     python scripts/ab_combo.py --strategy macd --min-net 2 --r2-min 0.7
     python scripts/ab_combo.py --strategy fibonacci
 """
@@ -89,6 +96,12 @@ def main() -> None:
     p.add_argument("--min-trades", type=int, default=30,
                    help="combos with fewer trades are tagged thin and excluded "
                         "from the best-win%% ranking (default 30)")
+    p.add_argument("--target-wk", type=float, default=0.5,
+                   help="weekly return goal in %%; rows meeting it are marked "
+                        "(default 0.5)")
+    p.add_argument("--slippage-bp", type=float, default=0.0,
+                   help="per-side cost in basis points of each symbol's median "
+                        "price, charged on entry and exit (default 0)")
     args = p.parse_args()
 
     csvs = [c for c in sorted(Path(args.data_dir).glob("*_h1.csv"))
@@ -99,12 +112,16 @@ def main() -> None:
 
     frames = {c.stem: load_csv(c) for c in csvs}
     breadth = compute_breadth(frames, args.lookback)
+    # per-symbol per-side cost in price units (bp of the median close)
+    slips = {s: float(df["close"].median()) * args.slippage_bp / 1e4
+             for s, df in frames.items()}
     start = min(df.index[0] for df in frames.values())
     end = max(df.index[-1] for df in frames.values())
     weeks = max((end - start).total_seconds() / (7 * 86400.0), 1e-9)
 
     print(f"# {args.strategy} gate-combo grid over {len(frames)} US stocks, "
-          f"{weeks:.1f} weeks of data")
+          f"{weeks:.1f} weeks of data; target {args.target_wk:g}%/wk, "
+          f"cost {args.slippage_bp:g}bp/side")
     print(f"# thresholds: breadth min_net={args.min_net:g}/lb={args.lookback}, "
           f"trendline r2_min={args.r2_min:g}/len={args.tl_length}, "
           f"stoch OB/OS={args.overbought:g}/{args.oversold:g}")
@@ -118,10 +135,11 @@ def main() -> None:
         n = wins = 0
         pnl = ret = 0.0
         for csv_path in csvs:
+            stem = csv_path.stem
             try:
                 r = run_backtest(
-                    frames[csv_path.stem], _cfg(csv_path, args, gates),
-                    breadth=breadth,
+                    frames[stem], _cfg(csv_path, args, gates),
+                    slippage_price=slips[stem], breadth=breadth,
                 )
             except Exception:  # noqa: BLE001
                 continue
@@ -131,10 +149,12 @@ def main() -> None:
                 pnl += t.pnl_price
                 ret += 100.0 * t.pnl_price / t.entry_price
         win = wins / n if n else 0.0
+        wk = ret / weeks
         thin = " (thin)" if n < args.min_trades else ""
+        hit = "  <- meets target" if wk >= args.target_wk and not thin else ""
         rows.append((label, n, win, pnl, ret))
         print(f"{label:<14} | {n:>5} {win:>6.1%} {pnl:>11.2f} "
-              f"{ret:>8.2f} {ret / weeks:>7.3f}{thin}")
+              f"{ret:>8.2f} {wk:>7.3f}{thin}{hit}")
 
     print("-" * len(hdr))
     solid = [r for r in rows[1:] if r[1] >= args.min_trades]
@@ -146,6 +166,10 @@ def main() -> None:
               f"{base[2]:.1%} -> {bw[2]:.1%} on {bw[1]} trades")
         print(f"# best PnL:                {bp[0]}  "
               f"{base[3]:+.2f} -> {bp[3]:+.2f}")
+    hits = [r[0] for r in rows if r[1] >= args.min_trades
+            and r[4] / weeks >= args.target_wk]
+    print(f"# combos meeting {args.target_wk:g}%/wk (n>={args.min_trades}): "
+          f"{', '.join(hits) if hits else 'NONE'}")
     print("# ret% = sum of per-trade unlevered returns (equal-weight units); "
           "~wk% = ret%/weeks — a rough per-position yardstick, not account equity.")
 
