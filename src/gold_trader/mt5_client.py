@@ -136,6 +136,16 @@ def account_equity() -> float:
     return float(info.equity)
 
 
+def positions_total_count() -> int:
+    """Number of open positions on the whole account (any symbol, any magic).
+
+    Used by the portfolio-wide cap (risk.max_total_positions): counting every
+    position — not just our magic's — is the conservative reading on a
+    dedicated bot account."""
+    mt5 = _mt5()
+    return int(mt5.positions_total() or 0)
+
+
 def open_positions(symbol: str, magic: int) -> list:
     mt5 = _mt5()
     positions = mt5.positions_get(symbol=symbol) or []

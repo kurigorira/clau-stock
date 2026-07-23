@@ -33,6 +33,11 @@ class RiskConfig:
     atr_length: int = 14
     atr_stop_mult: float = 2.0
     max_positions: int = 1
+    # Account-wide cap on simultaneously open positions (0 = no cap). Matters
+    # for symbol fleets: the breadth gate synchronises entries across the
+    # whole universe, so without a cap a strong regime can stack dozens of
+    # same-direction positions at per_trade_pct risk each.
+    max_total_positions: int = 0
 
 
 @dataclass

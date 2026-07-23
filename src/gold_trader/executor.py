@@ -119,6 +119,31 @@ class Executor:
             )
         return _BREADTH_CACHE[key]
 
+    def _portfolio_cap_reached(self) -> bool:
+        """True when the account-wide open-position cap forbids a new entry.
+
+        risk.max_total_positions counts every position on the account (any
+        symbol, any magic) — the conservative reading on a dedicated bot
+        account, and the backstop that stops a breadth-synchronised fleet from
+        stacking dozens of same-direction positions at once. 0 disables the
+        cap; a count failure fails open (per-symbol max still applies).
+        """
+        cap = self.cfg.risk.max_total_positions
+        if cap <= 0:
+            return False
+        try:
+            total = mt5_client.positions_total_count()
+        except Exception as exc:  # noqa: BLE001
+            self.log.warning(f"portfolio cap: positions_total failed: {exc}")
+            return False
+        if total >= cap:
+            self.log.info(
+                f"portfolio cap: {total} open positions >= "
+                f"max_total_positions={cap}, skipping entry"
+            )
+            return True
+        return False
+
     def _ensure_stop_losses(self, closed: pd.DataFrame) -> None:
         """Attach an ATR-based stop to any of our positions missing one."""
         positions = mt5_client.open_positions(
@@ -205,6 +230,9 @@ class Executor:
             self.cfg.symbol, self.cfg.execution.magic_number
         )
         if signal.side is None or len(positions) >= self.cfg.risk.max_positions:
+            return
+
+        if self._portfolio_cap_reached():
             return
 
         # Market-breadth regime gate (OOS-validated on macd): enter only when
