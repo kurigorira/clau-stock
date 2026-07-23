@@ -16,6 +16,7 @@ Method notes:
 
 Usage:
     python scripts/oos_breadth.py --strategy macd
+    python scripts/oos_breadth.py --strategy macd --stoch    # stoch+breadth combo
     python scripts/oos_breadth.py --strategy fibonacci --split 0.6
     python scripts/oos_breadth.py --strategy donchian --candidates 0,1,2,3,5
 """
@@ -47,6 +48,10 @@ def _base_cfg(csv_path: Path, args) -> Config:
     cfg = Config.from_yaml(matched) if matched else Config()
     cfg.strategy = args.strategy
     cfg.breadth.lookback = args.lookback
+    # --stoch layers the stochastic gate onto EVERY row (base included), so
+    # the table isolates breadth's marginal effect on top of stoch — i.e. it
+    # OOS-tests the stoch+breadth combo against a stoch-only base.
+    cfg.stoch.use = args.stoch
     return cfg
 
 
@@ -86,6 +91,9 @@ def main() -> None:
     p.add_argument("--lookback", type=int, default=100)
     p.add_argument("--candidates", default="0,1,2,3,5",
                    help="comma min_net candidates to select among on train")
+    p.add_argument("--stoch", action="store_true",
+                   help="enable the stochastic gate on every row (base too) — "
+                        "OOS-tests stoch+breadth against a stoch-only base")
     args = p.parse_args()
 
     all_csvs = sorted(Path(args.data_dir).glob("*_h1.csv"))
@@ -99,8 +107,10 @@ def main() -> None:
     split_ts = breadth.index[int(len(breadth) * args.split)]
     cands = [float(x) for x in args.candidates.split(",") if x.strip()]
 
+    stoch_tag = " + stoch gate on all rows" if args.stoch else ""
     print(f"# {args.strategy} breadth OOS  (lookback={args.lookback}, "
-          f"split={args.split:g} @ {split_ts.date()}, {len(frames)} US stocks)")
+          f"split={args.split:g} @ {split_ts.date()}, {len(frames)} US stocks"
+          f"{stoch_tag})")
     hdr = (f"{'min_net':>8} | {'n':>5} {'win%':>6} {'pnl':>11}  train | "
            f"{'n':>5} {'win%':>6} {'pnl':>11}  test")
     print(hdr)
