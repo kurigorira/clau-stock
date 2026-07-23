@@ -32,6 +32,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from gold_trader.cli_util import expand_paths  # noqa: E402
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect, timeframe  # noqa: E402
 from gold_trader.risk import position_volume  # noqa: E402
@@ -57,7 +58,12 @@ def main() -> None:
     p.add_argument("configs", nargs="*", help="YAMLs to diagnose (symbol + risk params)")
     args = p.parse_args()
 
-    jobs: list[Config] = [Config.from_yaml(c) for c in args.configs]
+    try:
+        config_paths = expand_paths(args.configs)  # PowerShell passes globs literally
+    except FileNotFoundError as exc:
+        sys.stderr.write(f"{exc}\n")
+        sys.exit(2)
+    jobs: list[Config] = [Config.from_yaml(c) for c in config_paths]
     for sym in args.symbols:
         cfg = Config()
         cfg.symbol = sym

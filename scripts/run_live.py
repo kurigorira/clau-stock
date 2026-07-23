@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from gold_trader.cli_util import expand_paths  # noqa: E402
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.executor import Executor  # noqa: E402
 from gold_trader.logger import setup_logging  # noqa: E402
@@ -45,7 +46,12 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dotenv()
-    configs = [Config.from_yaml(p) for p in args.configs]
+    try:
+        config_paths = expand_paths(args.configs)  # PowerShell passes globs literally
+    except FileNotFoundError as exc:
+        sys.stderr.write(f"{exc}\n")
+        sys.exit(2)
+    configs = [Config.from_yaml(p) for p in config_paths]
 
     log_file_default = (
         f"logs/account{args.account}.log" if args.account else "logs/live.log"

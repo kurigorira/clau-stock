@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from gold_trader.cli_util import expand_paths  # noqa: E402
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect, timeframe  # noqa: E402
 
@@ -44,8 +45,13 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dotenv()
+    try:
+        config_paths = expand_paths(args.configs)  # PowerShell passes globs literally
+    except FileNotFoundError as exc:
+        sys.stderr.write(f"{exc}\n")
+        sys.exit(2)
     symbols = list(dict.fromkeys(
-        [Config.from_yaml(p).symbol for p in args.configs] + args.symbols
+        [Config.from_yaml(p).symbol for p in config_paths] + args.symbols
     ))
     if not symbols:
         sys.stderr.write("nothing to dump: pass configs and/or --symbols\n")
