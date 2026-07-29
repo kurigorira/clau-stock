@@ -22,14 +22,80 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-# US single-name stocks in the fleet (CSV stems, lower-case). Indices, FX,
-# crypto and commodities are deliberately excluded — breadth is only meaningful
-# within one coherent, co-trading universe.
-US_STOCKS = (
-    "aapl", "amazon", "amd", "bac", "boeing", "cat", "cost", "cvx", "disney",
-    "exxon", "ge", "goog", "gs", "hd", "intel", "jnj", "jpm", "ko", "ma",
-    "mcd", "meta", "mrk", "msft", "nflx", "nke", "nvidia", "pep", "pfizer",
-    "pg", "tsla", "unh", "visa", "wmt",
+# US single-name stocks, as (canonical, *aliases) rows. Brokers disagree on
+# naming — Vantage lists "NVIDIA" where others list "NVDA" — so every spelling
+# of one company maps to a single canonical key and can never be counted twice
+# in the tally. Indices, FX, crypto and commodities are deliberately excluded:
+# breadth is only meaningful within one coherent, co-trading universe.
+#
+# Single-letter tickers (C, V, T, F, D, K, O, X) are deliberately omitted: an
+# exact match on a one-character symbol is too easy to collide with a broker's
+# internal instrument naming, and a false positive would spawn a live trading
+# config on an unintended instrument. `scan_universe.py` lists anything we skip
+# under MISSING so it can be added deliberately.
+#
+# This curated list only bounds the *backtest* universe (it matches data/ CSV
+# stems). For live trading, prefer broker-taxonomy discovery — see
+# discover_from_paths and BreadthConfig.universe_path — which scales to as many
+# symbols as the broker offers without maintaining tickers by hand.
+_COMPANY_ROWS: tuple[tuple[str, ...], ...] = (
+    # mega-cap tech
+    ("aapl", "apple"), ("msft", "microsoft"), ("goog", "googl", "google", "alphabet"),
+    ("amzn", "amazon"), ("meta", "facebook"), ("nvda", "nvidia"), ("tsla", "tesla"),
+    ("avgo", "broadcom"), ("orcl", "oracle"), ("crm", "salesforce"),
+    ("adbe", "adobe"), ("csco", "cisco"), ("acn", "accenture"), ("amd",),
+    ("intc", "intel"), ("qcom", "qualcomm"), ("txn",), ("ibm",),
+    ("now", "servicenow"), ("intu", "intuit"), ("amat",), ("mu", "micron"),
+    ("adi",), ("lrcx",), ("klac",), ("snps",), ("cdns",), ("anet",), ("mrvl",),
+    ("panw",), ("crwd", "crowdstrike"), ("snow", "snowflake"), ("ddog",),
+    ("pltr", "palantir"), ("uber",), ("abnb", "airbnb"), ("pypl", "paypal"),
+    ("shop", "shopify"), ("coin", "coinbase"), ("dell",), ("smci",),
+    ("mstr", "microstrategy"), ("zm", "zoom"), ("roku",), ("dash", "doordash"),
+    # financials
+    ("jpm",), ("bac",), ("wfc", "wellsfargo"), ("gs", "goldman", "goldmansachs"),
+    ("ms", "morganstanley"), ("citigroup", "citi"), ("axp", "americanexpress"),
+    ("blk", "blackrock"), ("schw", "schwab"), ("spgi",), ("cb",), ("pgr",),
+    ("usb",), ("pnc",), ("cof",), ("visa",), ("ma", "mastercard"),
+    ("bx", "blackstone"),
+    # healthcare
+    ("jnj",), ("unh",), ("lly", "lilly", "elililly"), ("pfe", "pfizer"),
+    ("abbv", "abbvie"), ("mrk", "merck"), ("tmo",), ("abt", "abbott"), ("dhr",),
+    ("bmy",), ("amgn", "amgen"), ("gild", "gilead"), ("cvs",), ("mdt", "medtronic"),
+    ("isrg",), ("vrtx",), ("regn",), ("zts",), ("syk",), ("bsx",), ("elv",),
+    # consumer
+    ("wmt", "walmart"), ("pg", "procter"), ("ko", "cocacola"), ("pep", "pepsi", "pepsico"),
+    ("cost", "costco"), ("mcd", "mcdonalds"), ("nke", "nike"), ("sbux", "starbucks"),
+    ("tgt", "target"), ("low", "lowes"), ("hd", "homedepot"), ("dis", "disney"),
+    ("nflx", "netflix"), ("cmcsa", "comcast"), ("tjx",), ("mdlz",), ("cl", "colgate"),
+    ("kmb",), ("mo", "altria"), ("pm", "philipmorris"), ("cmg", "chipotle"),
+    ("lulu", "lululemon"), ("rost",), ("dg",), ("yum",), ("kdp",), ("stz",), ("el",),
+    # industrials
+    ("cat", "caterpillar"), ("ba", "boeing"), ("ge",), ("hon", "honeywell"),
+    ("ups",), ("rtx", "raytheon"), ("lmt", "lockheed"), ("de", "deere"), ("mmm",),
+    ("emr",), ("etn",), ("itw",), ("csx",), ("unp",), ("fdx", "fedex"), ("noc",),
+    ("gd",), ("wm",),
+    # energy
+    ("xom", "exxon"), ("cvx", "chevron"), ("cop", "conocophillips"), ("slb",),
+    ("eog",), ("psx",), ("mpc",), ("vlo",), ("oxy",),
+    # autos, telecom, utilities, REITs
+    ("gm",), ("ford",), ("rivn", "rivian"), ("lcid", "lucid"),
+    ("att",), ("vz", "verizon"), ("tmus",), ("nee",), ("duk",),
+    ("amt",), ("pld",), ("spg",),
+)
+
+# variant stem -> canonical company key
+_VARIANT_TO_COMPANY: dict[str, str] = {
+    variant: row[0] for row in _COMPANY_ROWS for variant in row
+}
+
+# Flat set of every accepted stem (what is_universe_member matches against).
+US_STOCKS = tuple(sorted(_VARIANT_TO_COMPANY))
+
+# Symbol-path fragments that mean "not a single-name equity" for path-based
+# discovery. Kept next to the universe so both discovery routes agree.
+_NON_EQUITY_PATH_HINTS = (
+    "index", "indices", "forex", "fx", "crypto", "commodit", "metal",
+    "energy futures", "bond", "etf", "cash",
 )
 
 
@@ -39,10 +105,62 @@ def is_universe_member(symbol_or_stem: str) -> bool:
     Accepts 'nvidia_h1', 'NVIDIA', 'nvidia.24h' etc. — the '_h1' suffix and any
     '.24h'-style venue tag are stripped before matching.
     """
+    return _company_of(symbol_or_stem) is not None
+
+
+def _company_of(symbol_or_stem: str) -> str | None:
+    """Canonical company key for a symbol/stem, or None if not in the universe.
+
+    'NVDA', 'NVIDIA' and 'nvidia.24h' all resolve to the same key, so a broker
+    listing more than one spelling never double-counts one company.
+    """
     s = symbol_or_stem.lower()
     s = s[:-3] if s.endswith("_h1") else s
     s = s.split(".")[0]
-    return s in US_STOCKS
+    return _VARIANT_TO_COMPANY.get(s)
+
+
+def discover_from_paths(entries, path_contains: str = "us") -> list[str]:
+    """US-equity symbol names from (name, path) pairs of the broker's catalogue.
+
+    MT5 groups symbols by a path such as 'Stocks\\US\\AAPL', which is the
+    broker's own taxonomy — far more reliable than guessing from names, and it
+    scales to however many symbols are offered without maintaining a ticker
+    list by hand. Rows whose path names a non-equity bucket (index, FX, crypto,
+    ...) are dropped, and venue variants of one symbol collapse to the shortest
+    name (the plain market-hours feed).
+    """
+    needle = path_contains.lower()
+    best: dict[str, str] = {}
+    order: list[str] = []
+    for name, path in entries:
+        p = (path or "").lower()
+        if needle not in p or any(h in p for h in _NON_EQUITY_PATH_HINTS):
+            continue
+        base = name.lower().split(".")[0]
+        if base not in best:
+            best[base] = name
+            order.append(base)
+        elif len(name) < len(best[base]):
+            best[base] = name
+    return [best[b] for b in order]
+
+
+def sample_universe(symbols: list[str], cap: int) -> list[str]:
+    """At most `cap` symbols, evenly spread across `symbols` (cap<=0 = all).
+
+    Breadth is an aggregate statistic: its sampling error shrinks like 1/sqrt(n),
+    so a couple of hundred names estimate the same regime as a thousand — while
+    the live tally costs one history fetch per symbol per bar. Capping keeps
+    that cost bounded when the traded universe is large. The stride sample is
+    deterministic and order-stable, so the measured breadth doesn't jitter from
+    bar to bar as the membership changes.
+    """
+    if cap <= 0 or len(symbols) <= cap:
+        return list(symbols)
+    ordered = sorted(symbols)
+    step = len(ordered) / cap
+    return [ordered[int(i * step)] for i in range(cap)]
 
 
 def compute_breadth(frames: dict[str, pd.DataFrame], lookback: int) -> pd.Series:
@@ -79,15 +197,16 @@ def discover_universe(names: list[str]) -> list[str]:
     best: dict[str, str] = {}
     order: list[str] = []
     for name in names:
-        if not is_universe_member(name):
+        company = _company_of(name)
+        if company is None:
             continue
-        base = name.lower().split(".")[0]
-        if base not in best:
-            best[base] = name
-            order.append(base)
-        elif len(name) < len(best[base]):
-            best[base] = name
-    return [best[b] for b in order]
+        # key by company, not raw stem, so 'NVDA' and 'NVIDIA' collapse to one
+        if company not in best:
+            best[company] = name
+            order.append(company)
+        elif len(name) < len(best[company]):
+            best[company] = name
+    return [best[c] for c in order]
 
 
 def live_net_breadth(fetch, symbols: list[str], lookback: int,

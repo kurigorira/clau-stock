@@ -9,7 +9,11 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gold_trader import executor as executor_mod  # noqa: E402
-from gold_trader.breadth import discover_universe, live_net_breadth  # noqa: E402
+from gold_trader.breadth import (  # noqa: E402
+    US_STOCKS,
+    discover_universe,
+    live_net_breadth,
+)
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.executor import Executor  # noqa: E402
 
@@ -138,3 +142,74 @@ def test_executor_breadth_value_none_on_discovery_failure():
     with patch("gold_trader.executor.mt5_client.list_symbols",
                side_effect=RuntimeError("terminal gone")):
         assert ex._breadth_value(BAR_T) is None
+
+
+# --- alias handling, path discovery, sampling (universe expansion) ----------
+
+def test_alias_variants_collapse_to_one_company():
+    from gold_trader.breadth import discover_universe as du
+    # ticker and company-name spellings of the SAME company must not double-count
+    assert du(["NVDA", "NVIDIA"]) == ["NVDA"]
+    assert du(["AMAZON", "AMZN"]) == ["AMZN"]        # shortest name wins
+    assert du(["GOOGL", "GOOG", "ALPHABET"]) == ["GOOG"]
+    # distinct companies are both kept
+    assert du(["AAPL", "MSFT"]) == ["AAPL", "MSFT"]
+
+
+def test_original_universe_still_matches():
+    from gold_trader.breadth import is_universe_member as m
+    for stem in ("aapl", "amazon", "boeing", "disney", "exxon", "intel",
+                 "nvidia", "pfizer", "visa", "goog", "ma", "cost"):
+        assert m(stem), stem
+        assert m(f"{stem}_h1")
+
+
+def test_single_letter_tickers_excluded():
+    from gold_trader.breadth import is_universe_member as m
+    # deliberately omitted: a 1-char exact match collides too easily with a
+    # broker's internal naming and would spawn a live config on the wrong thing
+    for risky in ("c", "v", "t", "f", "d", "k", "o", "x"):
+        assert not m(risky), risky
+
+
+def test_discover_from_paths_uses_broker_taxonomy():
+    from gold_trader.breadth import discover_from_paths as dfp
+    entries = [
+        ("AAPL", r"Stocks\US\AAPL"),
+        ("ZZZZ", r"Stocks\US\ZZZZ"),          # not in US_STOCKS but a US equity
+        ("US500", r"Indices\US\US500"),        # index bucket -> excluded
+        ("EURUSD", r"Forex\Majors\EURUSD"),
+        ("BTCUSD", r"Crypto\BTCUSD"),
+        ("BMW", r"Stocks\DE\BMW"),             # wrong region
+    ]
+    assert dfp(entries, "us") == ["AAPL", "ZZZZ"]
+
+
+def test_discover_from_paths_dedupes_venue_variants():
+    from gold_trader.breadth import discover_from_paths as dfp
+    entries = [("NVDA.24h", r"Stocks\US\NVDA"), ("NVDA", r"Stocks\US\NVDA")]
+    assert dfp(entries, "us") == ["NVDA"]
+
+
+def test_sample_universe_caps_deterministically():
+    from gold_trader.breadth import sample_universe as su
+    syms = [f"S{i:04d}" for i in range(1000)]
+    got = su(syms, 200)
+    assert len(got) == 200
+    assert got == su(list(reversed(syms)), 200)   # order-stable across calls
+    assert len(set(got)) == 200                   # no duplicates
+    assert su(syms, 0) == syms                    # 0 = no cap
+    assert su(["A", "B"], 200) == ["A", "B"]      # under cap = unchanged
+
+
+def test_executor_samples_large_universe():
+    executor_mod._BREADTH_CACHE.clear()
+    ex = _executor()
+    ex.cfg.breadth.max_universe = 5
+    up = _feed([10, 10, 10, 10, 10, 11], [9, 9, 9, 9, 9, 9.5])
+    names = list(US_STOCKS)[:50]
+    with patch("gold_trader.executor.mt5_client.list_symbols", return_value=names), \
+         patch("gold_trader.executor.mt5_client.fetch_ohlcv", return_value=up):
+        val = ex._breadth_value(BAR_T)
+    assert len(ex._breadth_universe) == 5
+    assert val == 5.0        # only the sampled symbols are counted

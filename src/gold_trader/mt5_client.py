@@ -136,6 +136,16 @@ def account_equity() -> float:
     return float(info.equity)
 
 
+def list_symbols_with_paths() -> list[tuple[str, str]]:
+    """(name, path) for every symbol the terminal knows.
+
+    The MT5 `path` is the broker's own taxonomy (e.g. 'Stocks\\US\\AAPL'),
+    used by breadth.discover_from_paths to build the live universe without a
+    hand-maintained ticker list."""
+    mt5 = _mt5()
+    return [(s.name, getattr(s, "path", "") or "") for s in (mt5.symbols_get() or [])]
+
+
 def positions_total_count() -> int:
     """Number of open positions on the whole account (any symbol, any magic).
 

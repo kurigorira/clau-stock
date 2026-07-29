@@ -164,6 +164,17 @@ class BreadthConfig:
     use: bool = False
     lookback: int = 100   # bars defining a "new high / new low"
     min_net: float = 0.0  # required |net breadth| (0 -> simple majority)
+    # Live universe discovery. When `universe_path` is set, the breadth
+    # universe is the broker's own US-equity group (symbols whose MT5 path
+    # contains this fragment, e.g. "us") instead of the curated US_STOCKS
+    # list — that scales to hundreds of symbols with no ticker maintenance.
+    universe_path: str = ""
+    # Cap on how many symbols the live tally actually fetches (0 = no cap).
+    # Breadth is an aggregate: ~200 names estimate the same regime as 1000,
+    # while costing one history fetch per symbol per bar. NOTE min_net is an
+    # absolute count, so it is calibrated against this sample size — changing
+    # max_universe changes what a given min_net means.
+    max_universe: int = 200
 
 
 _STRATEGY_NAMES = ("donchian", "fibonacci", "macd")

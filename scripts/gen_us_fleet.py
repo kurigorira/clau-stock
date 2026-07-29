@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from gold_trader.breadth import discover_universe  # noqa: E402
+from gold_trader.breadth import discover_from_paths, discover_universe  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 
 TEMPLATE = """\
@@ -48,6 +48,8 @@ breadth:
   use: true
   lookback: {lookback}
   min_net: {min_net}
+  universe_path: "{universe_path}"
+  max_universe: {max_universe}
 
 risk:
   per_trade_pct: {per_trade_pct}
@@ -84,6 +86,16 @@ def main() -> None:
     p.add_argument("--with-stoch", action="store_true",
                    help="also enable the stochastic gate (stoch+breadth combo) "
                         "— flip on once its OOS check passes")
+    p.add_argument("--universe-path", default="",
+                   help="discover symbols from the broker's own US-equity group "
+                        "(MT5 symbol path fragment, e.g. 'us') instead of the "
+                        "curated US_STOCKS list — scales to hundreds of names")
+    p.add_argument("--max-universe", type=int, default=200,
+                   help="cap on symbols used for the live breadth tally "
+                        "(0 = all). Breadth is an aggregate; ~200 estimates the "
+                        "same regime as 1000 at a fraction of the fetch cost")
+    p.add_argument("--limit", type=int, default=0,
+                   help="generate at most this many configs (0 = all discovered)")
     args = p.parse_args()
 
     load_dotenv()
@@ -100,11 +112,19 @@ def main() -> None:
         sys.exit(2)
 
     with connect(creds) as mt5:
-        names = [s.name for s in (mt5.symbols_get() or [])]
-    universe = discover_universe(names)
+        syms = mt5.symbols_get() or []
+        if args.universe_path:
+            entries = [(s.name, getattr(s, "path", "") or "") for s in syms]
+            universe = discover_from_paths(entries, args.universe_path)
+        else:
+            universe = discover_universe([s.name for s in syms])
     if not universe:
-        sys.stderr.write("no US-stock symbols found on this broker\n")
+        where = (f"path containing {args.universe_path!r}" if args.universe_path
+                 else "the curated US_STOCKS list")
+        sys.stderr.write(f"no US-stock symbols found on this broker via {where}\n")
         sys.exit(2)
+    if args.limit > 0:
+        universe = sorted(universe)[:args.limit]
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -118,6 +138,8 @@ def main() -> None:
             max_total=args.max_total_positions,
             magic=args.magic_base + i,
             stoch_block=STOCH_BLOCK if args.with_stoch else "",
+            universe_path=args.universe_path,
+            max_universe=args.max_universe,
         )
         path = out / f"macd_breadth_{_slug(symbol)}.yaml"
         path.write_text(text, encoding="utf-8")
@@ -127,6 +149,19 @@ def main() -> None:
     print(f"\n# {len(paths)} configs. Worst case if every entry fires: "
           f"{args.max_total_positions} positions x {args.per_trade_pct:g}% "
           f"= {args.max_total_positions * args.per_trade_pct:g}% of equity at risk.")
+    if args.universe_path:
+        n_breadth = min(len(universe), args.max_universe) if args.max_universe > 0 \
+            else len(universe)
+        print(f"# breadth tally samples {n_breadth} of {len(universe)} symbols "
+              "per bar (min_net is calibrated against THAT count — re-run "
+              "oos_breadth if you change it).")
+    # run_live steps executors sequentially inside one poll interval; past a few
+    # hundred symbols the loop cannot finish within poll_seconds.
+    if len(paths) > 300:
+        print(f"# WARNING: {len(paths)} executors in one process will not finish "
+              "a poll cycle in time (each step makes >=1 MT5 history call). "
+              "Split the configs across several run_live.py processes, or use "
+              "--limit to trade fewer symbols than you measure breadth over.")
     acct = f" --account {args.account}" if args.account else ""
     print(f"# launch:\n#   python scripts/run_live.py{acct} {out}/*.yaml")
 

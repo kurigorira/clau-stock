@@ -8,7 +8,13 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from . import mt5_client, notify
-from .breadth import breadth_blocks, discover_universe, live_net_breadth
+from .breadth import (
+    breadth_blocks,
+    discover_from_paths,
+    discover_universe,
+    live_net_breadth,
+    sample_universe,
+)
 from .config import Config
 from .risk import position_volume
 from .strategy import (
@@ -81,6 +87,17 @@ class Executor:
         self._h4_cache_at = now
         return df
 
+    def _discover(self) -> list[str]:
+        """The breadth universe before sampling.
+
+        With breadth.universe_path set, the broker's own US-equity group is the
+        source of truth (scales to whatever it offers, no ticker list to
+        maintain); otherwise the curated US_STOCKS list is used."""
+        path = self.cfg.breadth.universe_path
+        if path:
+            return discover_from_paths(mt5_client.list_symbols_with_paths(), path)
+        return discover_universe(mt5_client.list_symbols())
+
     def _breadth_value(self, bar_time: pd.Timestamp) -> float | None:
         """Net US-stock breadth at `bar_time`, or None when unavailable.
 
@@ -93,7 +110,9 @@ class Executor:
         """
         if self._breadth_universe is None:
             try:
-                self._breadth_universe = discover_universe(mt5_client.list_symbols())
+                self._breadth_universe = sample_universe(
+                    self._discover(), self.cfg.breadth.max_universe
+                )
             except Exception as exc:  # noqa: BLE001
                 self.log.warning(f"breadth: symbol discovery failed: {exc}")
                 return None
