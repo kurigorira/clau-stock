@@ -256,3 +256,54 @@ def test_duplicate_company_feeds_collapse_in_path_discovery():
         ("XAUUSD", r"Stocks\US\XAUUSD"),        # gold -> excluded
     ]
     assert dfp(entries, "us") == ["AAPL", "NVIDIA"]
+
+
+# --- discovered-universe file (scaling without hand-typed tickers) ----------
+
+def test_load_universe_file_extends_and_filters(tmp_path):
+    from gold_trader import breadth as b
+    saved = dict(b._EXTRA_COMPANIES)
+    b._EXTRA_COMPANIES.clear()
+    try:
+        f = tmp_path / "u.txt"
+        f.write_text(
+            "# discovered on broker\n"
+            "ADSK\n"
+            "BKNG\n"
+            "AAOIUSD\n"      # USD feed of a company we don't curate
+            "XAUUSD\n"       # gold -> must be rejected
+            "US2000.r\n"     # index -> must be rejected
+            "AAPL\n"         # already curated -> not counted twice
+            "NVDAUSD\n"      # curated company via alias -> not counted twice
+            "\n",
+            encoding="utf-8",
+        )
+        added = b.load_universe_file(f)
+        assert added == 3                      # ADSK, BKNG, AAOI only
+        assert b.is_universe_member("ADSK")
+        assert b.is_universe_member("adsk_h1")  # backtest CSV stem resolves
+        assert b.is_universe_member("AAOIUSD")
+        assert not b.is_universe_member("XAUUSD")
+        assert not b.is_universe_member("US2000.r")
+    finally:
+        b._EXTRA_COMPANIES.clear()
+        b._EXTRA_COMPANIES.update(saved)
+
+
+def test_load_universe_file_missing_is_noop(tmp_path):
+    from gold_trader import breadth as b
+    assert b.load_universe_file(tmp_path / "nope.txt") == 0
+
+
+def test_discovered_symbols_do_not_double_count_curated(tmp_path):
+    from gold_trader import breadth as b
+    saved = dict(b._EXTRA_COMPANIES)
+    b._EXTRA_COMPANIES.clear()
+    try:
+        f = tmp_path / "u.txt"
+        f.write_text("AAPLUSD\nAPPLE\nAAPL\n", encoding="utf-8")
+        assert b.load_universe_file(f) == 0     # all three are one curated company
+        assert b.discover_universe(["AAPL", "AAPLUSD", "APPLE"]) == ["AAPL"]
+    finally:
+        b._EXTRA_COMPANIES.clear()
+        b._EXTRA_COMPANIES.update(saved)

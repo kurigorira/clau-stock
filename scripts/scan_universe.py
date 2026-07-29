@@ -35,12 +35,20 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gold_trader.breadth import (  # noqa: E402
-    US_STOCKS,
+    UNIVERSE_FILE,
     is_universe_member,
     looks_like_equity,
     normalize_stem,
 )
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
+
+
+def _curated_companies() -> set[str]:
+    from gold_trader.breadth import _COMPANY_ROWS
+    return {row[0] for row in _COMPANY_ROWS}
+
+
+_CURATED_COMPANIES = _curated_companies()
 
 
 def _key(name: str) -> str:
@@ -59,6 +67,12 @@ def main() -> None:
     p.add_argument("--path-contains", default="us",
                    help="substring identifying US equities in the symbol path "
                         "(default 'us'; try 'stock' if your broker differs)")
+    p.add_argument("--write-universe", nargs="?", const=str(UNIVERSE_FILE),
+                   default=None, metavar="PATH",
+                   help="write the discovered symbols to PATH (default "
+                        "config/us_universe.txt), which breadth.py auto-loads — "
+                        "this is how the universe scales without hand-typing "
+                        "tickers into the source")
     p.add_argument("--print-list", action="store_true",
                    help="print a US_STOCKS tuple covering every offered symbol")
     args = p.parse_args()
@@ -109,7 +123,9 @@ def main() -> None:
 
     traded = sorted(n for st, n in offered_stems.items() if is_universe_member(st))
     missing = sorted(n for st, n in offered_stems.items() if not is_universe_member(st))
-    absent = sorted(set(US_STOCKS) - set(offered_stems))
+    # compare CANONICAL companies, not alias spellings: keying the curated
+    # variants against company keys listed 'amazon' as absent while AMAZON traded
+    absent = sorted(_CURATED_COMPANIES - set(offered_stems))
 
     print(f"# broker offers {len(offered_stems)} US equity symbols "
           f"(path contains {args.path_contains!r})")
@@ -129,6 +145,21 @@ def main() -> None:
         print("# then: dump_history for the new symbols, re-run oos_breadth to "
               "re-select min_net (an absolute count — a bigger universe makes "
               "the old value weaker), then gen_us_fleet.")
+
+    if args.write_universe:
+        dest = Path(args.write_universe)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        lines = ["# US equity symbols discovered on this broker "
+                 f"(path contains {args.path_contains!r}).",
+                 "# Written by scripts/scan_universe.py --write-universe; "
+                 "auto-loaded by breadth.py.",
+                 "# Duplicate feeds of one company and non-equities are already "
+                 "filtered out.", ""]
+        lines += sorted(offered_stems.values())
+        dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print(f"\n# wrote {len(offered_stems)} symbols to {dest}")
+        print("# next: dump_history for the new symbols, re-run oos_breadth to "
+              "re-select min_net, then gen_us_fleet.")
 
     if args.print_list:
         # emit _COMPANY_ROWS rows (US_STOCKS is derived from them, so pasting a

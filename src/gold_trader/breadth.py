@@ -19,6 +19,8 @@ bar at t, and the strategy acts on that same closed bar.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -90,6 +92,39 @@ _VARIANT_TO_COMPANY: dict[str, str] = {
 
 # Flat set of every accepted stem (what is_universe_member matches against).
 US_STOCKS = tuple(sorted(_VARIANT_TO_COMPANY))
+
+# Companies discovered on a live broker and persisted by
+# `scan_universe.py --write-universe`. Loaded automatically at import when the
+# file exists, which is how the universe scales past the curated list WITHOUT
+# hand-typing hundreds of tickers (a typo there would mean trading the wrong
+# instrument). One symbol per line, '#' comments allowed.
+UNIVERSE_FILE = Path(__file__).resolve().parents[2] / "config" / "us_universe.txt"
+
+_EXTRA_COMPANIES: dict[str, str] = {}
+
+
+def load_universe_file(path=None) -> int:
+    """Merge a discovered-symbol file into the accepted universe.
+
+    Returns how many companies were added. Names are normalised and mapped to
+    the curated canonical key when one exists, so a discovered 'AAPLUSD' still
+    resolves to the same company as the curated 'aapl' and cannot double-count.
+    Non-equities are rejected by looks_like_equity even if the file lists them.
+    """
+    p = Path(path) if path is not None else UNIVERSE_FILE
+    if not p.exists():
+        return 0
+    added = 0
+    for raw in p.read_text(encoding="utf-8").splitlines():
+        name = raw.split("#")[0].strip()
+        if not name or not looks_like_equity(name):
+            continue
+        stem = normalize_stem(name)
+        if stem in _VARIANT_TO_COMPANY or stem in _EXTRA_COMPANIES:
+            continue
+        _EXTRA_COMPANIES[stem] = stem
+        added += 1
+    return added
 
 # Symbol-path fragments that mean "not a single-name equity" for path-based
 # discovery. Kept next to the universe so both discovery routes agree.
@@ -172,7 +207,8 @@ def _company_of(symbol_or_stem: str) -> str | None:
     'NVDA', 'NVIDIA' and 'nvidia.24h' all resolve to the same key, so a broker
     listing more than one spelling never double-counts one company.
     """
-    return _VARIANT_TO_COMPANY.get(normalize_stem(symbol_or_stem))
+    stem = normalize_stem(symbol_or_stem)
+    return _VARIANT_TO_COMPANY.get(stem) or _EXTRA_COMPANIES.get(stem)
 
 
 def discover_from_paths(entries, path_contains: str = "us") -> list[str]:
@@ -311,3 +347,8 @@ def breadth_blocks(side: str, value: float, min_net: float) -> bool:
     if side == "buy":
         return not (value > min_net)
     return not (value < -min_net)
+
+
+# Auto-load the discovered universe so every script (backtests included) sees
+# the broker's real catalogue with no per-script plumbing.
+load_universe_file()
