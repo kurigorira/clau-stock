@@ -9,8 +9,10 @@ is far more reliable than guessing from names) and splits them into:
   MISSING  — offered here but NOT in US_STOCKS (free frequency, one edit away)
   ABSENT   — in US_STOCKS but not offered by this broker (dead entries)
 
-`--print-list` emits a ready-to-paste US_STOCKS tuple covering everything the
-broker offers.
+`--print-list` emits ready-to-paste _COMPANY_ROWS entries covering everything
+the broker offers. Non-equities that share the "US" path (spot metals, oil,
+index CFDs, notes) and duplicate feeds of one company (AAPL vs AAPLUSD vs
+ABBV.24H) are filtered and collapsed, so the count is companies, not feeds.
 
 IMPORTANT after expanding: breadth.min_net is an absolute symbol count, so a
 bigger universe makes the same min_net a *relatively* weaker filter. Re-run
@@ -32,12 +34,23 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from gold_trader.breadth import US_STOCKS, is_universe_member  # noqa: E402
+from gold_trader.breadth import (  # noqa: E402
+    US_STOCKS,
+    is_universe_member,
+    looks_like_equity,
+    normalize_stem,
+)
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 
 
-def _stem(name: str) -> str:
-    return name.lower().split(".")[0]
+def _key(name: str) -> str:
+    """Company-level key: 'ABBV.24H', 'ABBVIE' and 'ABBVUSD' all collapse here.
+
+    Deduping by raw stem (the earlier behaviour) double-listed the same company
+    once per feed, inflating the offered count."""
+    from gold_trader.breadth import _VARIANT_TO_COMPANY
+    stem = normalize_stem(name)
+    return _VARIANT_TO_COMPANY.get(stem) or stem
 
 
 def main() -> None:
@@ -70,10 +83,14 @@ def main() -> None:
         for s in syms:
             path = (getattr(s, "path", "") or "").lower()
             # keep US-equity groups; drop index/FX/crypto buckets
-            if needle in path and not any(
+            if needle not in path or any(
                 x in path for x in ("index", "indices", "forex", "crypto", "commodit")
             ):
-                equities.append(s.name)
+                continue
+            # spot metals, oil, index CFDs and notes also live under "US"
+            if not looks_like_equity(s.name):
+                continue
+            equities.append(s.name)
 
     if not equities:
         sys.stderr.write(
@@ -85,7 +102,7 @@ def main() -> None:
 
     offered_stems = {}
     for name in equities:
-        st = _stem(name)
+        st = _key(name)
         # prefer the plain market-hours feed over venue variants (NVIDIA.24h)
         if st not in offered_stems or len(name) < len(offered_stems[st]):
             offered_stems[st] = name
@@ -114,12 +131,14 @@ def main() -> None:
               "the old value weaker), then gen_us_fleet.")
 
     if args.print_list:
-        stems = sorted(offered_stems)
-        print("\n# paste into src/gold_trader/breadth.py")
-        print("US_STOCKS = (")
-        for i in range(0, len(stems), 6):
-            print("    " + ", ".join(f'"{s}"' for s in stems[i:i + 6]) + ",")
-        print(")")
+        # emit _COMPANY_ROWS rows (US_STOCKS is derived from them, so pasting a
+        # flat US_STOCKS tuple would no longer wire anything up)
+        keys = sorted(offered_stems)
+        print("\n# paste into _COMPANY_ROWS in src/gold_trader/breadth.py")
+        print("    # --- discovered on this broker ---")
+        for i in range(0, len(keys), 6):
+            row = ", ".join(f'("{k}",)' for k in keys[i:i + 6])
+            print(f"    {row},")
 
 
 if __name__ == "__main__":

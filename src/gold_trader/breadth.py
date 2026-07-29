@@ -98,6 +98,64 @@ _NON_EQUITY_PATH_HINTS = (
     "energy futures", "bond", "etf", "cash",
 )
 
+# Instruments that live in a broker's "US" group but are not single-name
+# equities. Real observed leakage on Vantage: spot metals (XAUUSD), oil
+# (USOUSD/UKOUSD), the dollar index (USDX.r), index CFDs (US2000.r) and notes
+# (USNote10Y). Mixing them into the tally breaks breadth's premise of one
+# coherent, co-trading universe.
+_NON_EQUITY_STEMS = frozenset({
+    "uso", "usl", "gold", "silver", "oil", "ngas", "gas",
+    "copper", "corn", "wheat", "soybean",
+})
+
+# Roots that begin a non-equity code. Matched as a prefix so vendor-tagged
+# variants ('UKOUSDft') are caught too. Deliberately none of them prefix a real
+# ticker in the universe ('usb' matches none of these).
+_NON_EQUITY_PREFIXES = (
+    "xau", "xag", "xpt", "xpd", "uko", "usoil", "ukoil",
+    "usdx", "usnote", "ustec", "usidx", "wti", "brent",
+)
+
+# Quote suffixes brokers bolt onto a second feed of the SAME instrument.
+# A trailing "usd" is the big one: Vantage lists both AAPL and AAPLUSD, so
+# without stripping it the tally counts Apple twice. Note we deliberately do
+# NOT strip generic letter suffixes — 'amazon' ends in 'n' and 'microsoft' in
+# 'ft', so trimming those would corrupt real names.
+_QUOTE_SUFFIXES = ("usd", "-us")
+
+
+def normalize_stem(name: str) -> str:
+    """Reduce a broker symbol to a comparable company stem.
+
+    Strips the '_h1' CSV tag, any '.24H'/'.r' venue tag and a trailing quote
+    suffix ('AAPLUSD' -> 'aapl', 'ASML-US' -> 'asml'). Symbols containing
+    digits (US2000, USNote10Y, SPX500) collapse to '' — single-name US equities
+    don't carry digits, while index/bond/futures codes routinely do.
+    """
+    s = name.lower().strip()
+    s = s[:-3] if s.endswith("_h1") else s
+    s = s.split(".")[0]          # venue tag: NVIDIA.24h, US2000.r
+    s = s.replace("&", "")       # AT&T -> att
+    for suffix in _QUOTE_SUFFIXES:
+        if len(s) > len(suffix) and s.endswith(suffix):
+            s = s[: -len(suffix)]
+            break
+    if any(ch.isdigit() for ch in s):
+        return ""
+    return s
+
+
+def looks_like_equity(name: str) -> bool:
+    """True if a broker symbol plausibly names a single US-listed company.
+
+    Used by path-based discovery, where the broker's group membership is the
+    only other signal — it keeps spot metals, oil, index CFDs and notes out of
+    the breadth tally even when they sit in the same 'US' folder."""
+    stem = normalize_stem(name)
+    if not stem or len(stem) < 2 or stem in _NON_EQUITY_STEMS:
+        return False
+    return not stem.startswith(_NON_EQUITY_PREFIXES)
+
 
 def is_universe_member(symbol_or_stem: str) -> bool:
     """True if a CSV stem / symbol slug belongs to the US-stock universe.
@@ -114,10 +172,7 @@ def _company_of(symbol_or_stem: str) -> str | None:
     'NVDA', 'NVIDIA' and 'nvidia.24h' all resolve to the same key, so a broker
     listing more than one spelling never double-counts one company.
     """
-    s = symbol_or_stem.lower()
-    s = s[:-3] if s.endswith("_h1") else s
-    s = s.split(".")[0]
-    return _VARIANT_TO_COMPANY.get(s)
+    return _VARIANT_TO_COMPANY.get(normalize_stem(symbol_or_stem))
 
 
 def discover_from_paths(entries, path_contains: str = "us") -> list[str]:
@@ -137,7 +192,9 @@ def discover_from_paths(entries, path_contains: str = "us") -> list[str]:
         p = (path or "").lower()
         if needle not in p or any(h in p for h in _NON_EQUITY_PATH_HINTS):
             continue
-        base = name.lower().split(".")[0]
+        if not looks_like_equity(name):
+            continue
+        base = _VARIANT_TO_COMPANY.get(normalize_stem(name)) or normalize_stem(name)
         if base not in best:
             best[base] = name
             order.append(base)

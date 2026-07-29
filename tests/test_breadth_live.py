@@ -213,3 +213,46 @@ def test_executor_samples_large_universe():
         val = ex._breadth_value(BAR_T)
     assert len(ex._breadth_universe) == 5
     assert val == 5.0        # only the sampled symbols are counted
+
+
+# --- broker-name normalization (real Vantage catalogue shapes) --------------
+
+def test_normalize_stem_strips_feed_suffixes():
+    from gold_trader.breadth import normalize_stem as n
+    assert n("AAPLUSD") == "aapl"        # USD-quoted duplicate feed
+    assert n("ABBV.24H") == "abbv"       # 24-hour venue feed
+    assert n("ASML-US") == "asml"
+    assert n("AT&T") == "att"
+    assert n("nvidia_h1") == "nvidia"    # backtest CSV stem
+    assert n("US2000.r") == ""           # digits -> not a single-name equity
+    assert n("USNote10Y") == ""
+
+
+def test_normalize_stem_does_not_corrupt_real_names():
+    from gold_trader.breadth import normalize_stem as n
+    # 'amazon' ends in n, 'microsoft' in ft — naive suffix trimming broke these
+    for name in ("amazon", "microsoft", "msft", "visa", "boeing", "disney",
+                 "pfizer", "usb", "goog", "ma", "intel"):
+        assert n(name) == name, name
+
+
+def test_looks_like_equity_rejects_us_path_leakage():
+    from gold_trader.breadth import looks_like_equity as eq
+    # all of these really sit in Vantage's US group but are not equities
+    for junk in ("XAUUSD", "XAGUSD", "USO", "USOUSD", "USL", "UKOUSD",
+                 "UKOUSDft", "US2000.r", "USDX.r", "USNote10Y", "VUSD"):
+        assert not eq(junk), junk
+    for real in ("AAPL", "AAPLUSD", "ABBV.24H", "ASML-US", "USB", "NVIDIA"):
+        assert eq(real), real
+
+
+def test_duplicate_company_feeds_collapse_in_path_discovery():
+    from gold_trader.breadth import discover_from_paths as dfp
+    entries = [
+        ("AAPL", r"Stocks\US\AAPL"),
+        ("AAPLUSD", r"Stocks\US\AAPLUSD"),      # same company, USD feed
+        ("NVIDIA", r"Stocks\US\NVIDIA"),
+        ("NVDAUSD", r"Stocks\US\NVDAUSD"),      # same company, ticker+USD
+        ("XAUUSD", r"Stocks\US\XAUUSD"),        # gold -> excluded
+    ]
+    assert dfp(entries, "us") == ["AAPL", "NVIDIA"]
