@@ -27,7 +27,12 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from gold_trader.breadth import discover_from_paths, discover_universe  # noqa: E402
+from gold_trader.breadth import (  # noqa: E402
+    _COMPANY_ROWS,
+    discover_from_paths,
+    discover_universe,
+)
+from gold_trader.cli_util import rank_by_spread  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 
 TEMPLATE = """\
@@ -95,7 +100,12 @@ def main() -> None:
                         "(0 = all). Breadth is an aggregate; ~200 estimates the "
                         "same regime as 1000 at a fraction of the fetch cost")
     p.add_argument("--limit", type=int, default=0,
-                   help="generate at most this many configs (0 = all discovered)")
+                   help="generate at most this many configs, chosen by TIGHTEST "
+                        "measured spread (0 = all discovered)")
+    p.add_argument("--max-spread-bp", type=float, default=None,
+                   help="drop symbols whose live spread exceeds this many basis "
+                        "points of mid — the cost that decides whether the edge "
+                        "survives (base MACD died at 5bp/side)")
     args = p.parse_args()
 
     load_dotenv()
@@ -111,6 +121,7 @@ def main() -> None:
         sys.stderr.write(f"missing env var {missing}\n")
         sys.exit(2)
 
+    spreads: dict[str, float] = {}
     with connect(creds) as mt5:
         syms = mt5.symbols_get() or []
         if args.universe_path:
@@ -118,18 +129,39 @@ def main() -> None:
             universe = discover_from_paths(entries, args.universe_path)
         else:
             universe = discover_universe([s.name for s in syms])
+
+        # Rank by measured spread, not the alphabet. Truncating a sorted list
+        # kept only A..E names — dropping MSFT/NVDA/TSLA while keeping micro
+        # caps and synthetic pre-IPO products whose spreads make the 5bp cost
+        # assumption meaningless.
+        if universe and (args.limit > 0 or args.max_spread_bp is not None):
+            def _quote(name):
+                mt5.symbol_select(name, True)
+                info = mt5.symbol_info(name)
+                return None if info is None else (info.bid, info.ask)
+
+            curated = {row[0] for row in _COMPANY_ROWS}
+            ranked, dropped = rank_by_spread(
+                universe, _quote, args.max_spread_bp, prefer=curated
+            )
+            if dropped:
+                print(f"# dropped {len(dropped)} symbols (untradeable or too "
+                      f"wide): {', '.join(n for n, _ in dropped[:12])}"
+                      f"{' ...' if len(dropped) > 12 else ''}")
+            if args.limit > 0:
+                ranked = ranked[:args.limit]
+            spreads = dict(ranked)
+            universe = [n for n, _ in ranked]
     if not universe:
         where = (f"path containing {args.universe_path!r}" if args.universe_path
                  else "the curated US_STOCKS list")
         sys.stderr.write(f"no US-stock symbols found on this broker via {where}\n")
         sys.exit(2)
-    if args.limit > 0:
-        universe = sorted(universe)[:args.limit]
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths = []
-    for i, symbol in enumerate(sorted(universe)):
+    for i, symbol in enumerate(universe):
         text = TEMPLATE.format(
             symbol=symbol,
             lookback=args.lookback,
@@ -144,7 +176,9 @@ def main() -> None:
         path = out / f"macd_breadth_{_slug(symbol)}.yaml"
         path.write_text(text, encoding="utf-8")
         paths.append(path)
-        print(f"wrote {path}  ({symbol})")
+        sp = spreads.get(symbol)
+        detail = f"{symbol}, {sp:.1f}bp" if sp is not None else symbol
+        print(f"wrote {path}  ({detail})")
 
     print(f"\n# {len(paths)} configs. Worst case if every entry fires: "
           f"{args.max_total_positions} positions x {args.per_trade_pct:g}% "
