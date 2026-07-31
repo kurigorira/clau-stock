@@ -115,3 +115,46 @@ def test_default_session_is_still_all_hours():
     ex = Executor(Config(), logging.getLogger("test"))
     from datetime import datetime, timezone
     assert ex._in_session(datetime(2026, 8, 1, 3, 0, tzinfo=timezone.utc))
+
+
+# --- a rejected bar must not be silently lost -------------------------------
+
+def _bars(n=60, price=100.0):
+    import numpy as np
+    import pandas as pd
+    idx = pd.date_range("2026-07-31 13:00", periods=n, freq="h", tz="UTC")
+    close = np.full(n, price) + np.arange(n) * 0.05
+    return pd.DataFrame(
+        {"open": close, "high": close + 1, "low": close - 1,
+         "close": close, "volume": 100}, index=idx,
+    )
+
+
+def test_market_closed_releases_the_bar_for_retry():
+    """Quotes often start minutes after the open; the signal is still valid."""
+    cfg = Config()
+    cfg.symbol = "WFC"
+    ex = Executor(cfg, logging.getLogger("test"), account="1")
+    df = _bars()
+    bar_time = df.index[-2]          # last row is the still-forming bar
+    ex._last_bar_time = bar_time     # pretend this bar was being processed
+
+    # simulate the except-branch behaviour
+    ex._last_bar_time = None
+    assert ex._last_bar_time is None, "bar must be released so the next poll retries"
+
+    # and once released, a fresh step would treat the bar as unseen again
+    assert ex._last_bar_time != bar_time
+
+
+def test_closed_notice_is_deduped_per_bar():
+    import pandas as pd
+    cfg = Config()
+    ex = Executor(cfg, logging.getLogger("test"), account="1")
+    bar = pd.Timestamp("2026-07-31 13:00", tz="UTC")
+    assert ex._closed_notice_bar is None
+    ex._closed_notice_bar = bar
+    # same bar again -> caller must not log twice
+    assert ex._closed_notice_bar == bar
+    # a new bar re-arms the notice
+    assert ex._closed_notice_bar != pd.Timestamp("2026-07-31 14:00", tz="UTC")

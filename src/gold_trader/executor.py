@@ -50,6 +50,7 @@ class Executor:
         self._h4_cache: pd.DataFrame | None = None
         self._h4_cache_at: float = 0.0
         self._breadth_universe: list[str] | None = None  # None = not discovered yet
+        self._closed_notice_bar: pd.Timestamp | None = None  # log closed once/bar
 
     def _in_session(self, now: datetime) -> bool:
         s = self.cfg.session
@@ -339,10 +340,16 @@ class Executor:
                 comment=self.cfg.execution.comment,
             )
         except mt5_client.MarketClosedError as exc:
-            # Expected outside the venue's hours (and on holidays / halts):
-            # log once and let the next in-session bar try again, instead of
-            # raising a traceback into the fleet loop every poll.
-            self.log.info(f"skipping entry, {exc}")
+            # A venue that is not quoting *yet* is different from one that is
+            # shut: quotes often start a few minutes after the session opens,
+            # and this bar's signal is still valid until the bar is superseded.
+            # So release the bar instead of consuming it, and let the next poll
+            # retry. Genuinely closed hours then cost one log line per bar
+            # rather than one per poll.
+            self._last_bar_time = None
+            if self._closed_notice_bar != bar_time:
+                self._closed_notice_bar = bar_time
+                self.log.info(f"entry deferred, {exc} (will retry next poll)")
             return
         # Best-effort email notification; never raises.
         notify.send_signal_mail(
