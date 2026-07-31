@@ -327,16 +327,23 @@ class Executor:
             f"atr={signal.atr:.3f} h4_trend={signal.h4_trend_dir} "
             f"fib_level={signal.fib_level:.3f}"
         )
-        order_result = mt5_client.market_order(
-            symbol=self.cfg.symbol,
-            side=signal.side,
-            volume=volume,
-            sl=signal.stop,
-            tp=signal.tp,
-            magic=self.cfg.execution.magic_number,
-            deviation=self.cfg.execution.deviation_points,
-            comment=self.cfg.execution.comment,
-        )
+        try:
+            order_result = mt5_client.market_order(
+                symbol=self.cfg.symbol,
+                side=signal.side,
+                volume=volume,
+                sl=signal.stop,
+                tp=signal.tp,
+                magic=self.cfg.execution.magic_number,
+                deviation=self.cfg.execution.deviation_points,
+                comment=self.cfg.execution.comment,
+            )
+        except mt5_client.MarketClosedError as exc:
+            # Expected outside the venue's hours (and on holidays / halts):
+            # log once and let the next in-session bar try again, instead of
+            # raising a traceback into the fleet loop every poll.
+            self.log.info(f"skipping entry, {exc}")
+            return
         # Best-effort email notification; never raises.
         notify.send_signal_mail(
             symbol=self.cfg.symbol,

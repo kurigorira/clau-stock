@@ -60,6 +60,15 @@ breadth:
   universe_path: "{universe_path}"
   max_universe: {max_universe}
 
+# US cash equities trade 09:30-16:00 ET. That is 13:30-20:00 UTC on EDT and
+# 14:30-21:00 UTC on EST, so this window is the union of both — it never misses
+# a tradeable bar, and the ~1h/day that is closed on either side of a DST shift
+# is handled gracefully (MarketClosedError -> info log, no traceback).
+session:
+  start_utc: "13:30"
+  end_utc: "21:00"
+  trade_days: ["Mon", "Tue", "Wed", "Thu", "Fri"]
+
 risk:
   per_trade_pct: {per_trade_pct}
   atr_stop_mult: 2.0

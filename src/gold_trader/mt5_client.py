@@ -38,6 +38,27 @@ def _mt5():
     return mt5
 
 
+class MarketClosedError(RuntimeError):
+    """The venue rejected the order because it is not trading right now.
+
+    An expected state — holidays, early closes, halts, and the minutes either
+    side of a DST shift — not a bug, so callers log it and move on instead of
+    surfacing a traceback every poll."""
+
+
+# Retcodes that mean "not trading now" rather than "the request was wrong".
+# Resolved by name with numeric fallbacks because the constant set varies
+# between MetaTrader5 package versions.
+def _closed_retcodes(mt5) -> set:
+    names = (
+        ("TRADE_RETCODE_MARKET_CLOSED", 10018),
+        ("TRADE_RETCODE_OFF_QUOTES", 10021),
+        ("TRADE_RETCODE_PRICE_OFF", 10020),
+        ("TRADE_RETCODE_TRADE_DISABLED", 10017),
+    )
+    return {getattr(mt5, name, fallback) for name, fallback in names}
+
+
 @dataclass
 class MT5Credentials:
     login: int
@@ -217,7 +238,11 @@ def market_order(
     mt5 = _mt5()
     order_type = mt5.ORDER_TYPE_BUY if side == "buy" else mt5.ORDER_TYPE_SELL
     tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        raise MarketClosedError(f"{symbol}: no tick available (market closed?)")
     price = tick.ask if side == "buy" else tick.bid
+    if not price or price <= 0:
+        raise MarketClosedError(f"{symbol}: no {side} price (market closed?)")
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
@@ -234,6 +259,10 @@ def market_order(
     }
     result = mt5.order_send(request)
     if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+        if result is not None and result.retcode in _closed_retcodes(mt5):
+            raise MarketClosedError(
+                f"{symbol}: venue not trading (retcode {result.retcode})"
+            )
         raise RuntimeError(f"order_send failed: {result}")
     return {"ticket": result.order, "price": result.price, "volume": result.volume}
 
