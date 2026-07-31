@@ -139,6 +139,42 @@ class Executor:
             )
         return _BREADTH_CACHE[key]
 
+    def _stop_still_valid(self, signal, meta: dict, planned_distance: float) -> bool:
+        """False when the live price has invalidated the signal's stop.
+
+        Two ways that happens between the bar close and the order:
+          * price ran past the stop (or to the wrong side of it) — the trade is
+            already a loser, so entering just books the loss;
+          * the remaining distance is under the broker's minimum (stops_level)
+            or a fraction of what the size was computed against, which both
+            means the position would carry far more risk per lot than
+            per_trade_pct allowed.
+
+        Unavailable quotes fall through to the order, where MarketClosedError
+        already handles them.
+        """
+        try:
+            tick = mt5_client.symbol_tick(self.cfg.symbol)
+        except Exception:  # noqa: BLE001
+            return True
+        if not tick:
+            return True
+        price = tick[1] if signal.side == "buy" else tick[0]   # ask / bid
+        if not price or price <= 0:
+            return True
+
+        remaining = (price - signal.stop) if signal.side == "buy" else (signal.stop - price)
+        min_broker = float(meta.get("stops_level") or 0) * float(meta.get("point") or 0)
+        min_needed = max(min_broker, planned_distance * self.cfg.risk.min_stop_fraction)
+        if remaining < min_needed:
+            self.log.info(
+                f"skipping entry: price moved {signal.entry_ref:.4f} -> {price:.4f}, "
+                f"stop {signal.stop:.4f} now {remaining:.4f} away "
+                f"(need {min_needed:.4f}; planned {planned_distance:.4f})"
+            )
+            return False
+        return True
+
     def _portfolio_cap_reached(self) -> bool:
         """True when the account-wide open-position cap forbids a new entry.
 
@@ -320,6 +356,15 @@ class Executor:
                 f"volume_min={meta['volume_min']}. "
                 f"Raise risk.per_trade_pct or lower risk.atr_stop_mult to enable entry."
             )
+            return
+
+        # The signal's stop was measured from the bar close, but we fill at the
+        # current market. If price has already run most of the way to that stop
+        # the trade's risk/reward is gone before it starts — and if it has run
+        # past, or inside the broker's minimum stop distance, the order is
+        # rejected outright (retcode 10016 "Invalid stops"). Check against the
+        # live price and skip rather than enter a trade that no longer exists.
+        if not self._stop_still_valid(signal, meta, stop_distance):
             return
 
         self.log.info(

@@ -167,6 +167,15 @@ def list_symbols_with_paths() -> list[tuple[str, str]]:
     return [(s.name, getattr(s, "path", "") or "") for s in (mt5.symbols_get() or [])]
 
 
+def symbol_tick(symbol: str) -> tuple[float, float] | None:
+    """(bid, ask) for `symbol`, or None when the terminal has no quote."""
+    mt5 = _mt5()
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        return None
+    return (float(tick.bid), float(tick.ask))
+
+
 def positions_total_count() -> int:
     """Number of open positions on the whole account (any symbol, any magic).
 

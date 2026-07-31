@@ -38,6 +38,11 @@ class RiskConfig:
     # whole universe, so without a cap a strong regime can stack dozens of
     # same-direction positions at per_trade_pct risk each.
     max_total_positions: int = 0
+    # Reject an entry when price has already moved so far that less than this
+    # fraction of the planned stop distance remains. Sizing assumed the full
+    # distance, so entering anyway would carry proportionally more risk per
+    # lot than per_trade_pct permits.
+    min_stop_fraction: float = 0.5
 
 
 @dataclass

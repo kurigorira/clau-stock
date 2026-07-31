@@ -158,3 +158,61 @@ def test_closed_notice_is_deduped_per_bar():
     assert ex._closed_notice_bar == bar
     # a new bar re-arms the notice
     assert ex._closed_notice_bar != pd.Timestamp("2026-07-31 14:00", tz="UTC")
+
+
+# --- stop validity vs the live price ----------------------------------------
+
+class _Sig:
+    def __init__(self, side, stop, ref):
+        self.side, self.stop, self.entry_ref = side, stop, ref
+
+
+META = {"stops_level": 0, "point": 0.01}
+
+
+def _ex(min_frac=0.5):
+    cfg = Config()
+    cfg.symbol = "EXXON"
+    cfg.risk.min_stop_fraction = min_frac
+    return Executor(cfg, logging.getLogger("test"), account="1")
+
+
+def _valid(ex, sig, planned, bid, ask, meta=META):
+    with patch("gold_trader.executor.mt5_client.symbol_tick", return_value=(bid, ask)):
+        return ex._stop_still_valid(sig, meta, planned)
+
+
+def test_untouched_price_is_valid():
+    # buy signalled at 157.72 with stop 155.16 (2.56 away); price barely moved
+    assert _valid(_ex(), _Sig("buy", 155.16, 157.72), 2.56, 157.70, 157.72)
+
+
+def test_price_ran_to_the_stop_is_rejected():
+    # the real EXXON case: filled at 155.28, leaving 0.12 of a 2.56 stop
+    assert not _valid(_ex(), _Sig("buy", 155.16, 157.72), 2.56, 155.26, 155.28)
+
+
+def test_price_past_the_stop_is_rejected():
+    assert not _valid(_ex(), _Sig("buy", 155.16, 157.72), 2.56, 154.00, 154.02)
+
+
+def test_short_side_mirrors():
+    # the real GOOG case: sell stop 340.64, price ran up to 341.76
+    assert not _valid(_ex(), _Sig("sell", 340.64, 334.05), 6.59, 341.76, 341.78)
+    assert _valid(_ex(), _Sig("sell", 340.64, 334.05), 6.59, 334.00, 334.02)
+
+
+def test_broker_minimum_stop_distance_is_enforced():
+    meta = {"stops_level": 200, "point": 0.01}      # 2.00 minimum
+    sig = _Sig("buy", 155.16, 157.72)
+    assert not _valid(_ex(min_frac=0.0), sig, 2.56, 156.50, 156.52, meta)  # 1.36 < 2.00
+    assert _valid(_ex(min_frac=0.0), sig, 2.56, 157.50, 157.52, meta)      # 2.36 > 2.00
+
+
+def test_missing_quote_defers_to_the_order():
+    ex = _ex()
+    with patch("gold_trader.executor.mt5_client.symbol_tick", return_value=None):
+        assert ex._stop_still_valid(_Sig("buy", 155.16, 157.72), META, 2.56)
+    with patch("gold_trader.executor.mt5_client.symbol_tick",
+               side_effect=RuntimeError("terminal gone")):
+        assert ex._stop_still_valid(_Sig("buy", 155.16, 157.72), META, 2.56)
