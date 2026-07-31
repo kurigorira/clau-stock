@@ -1,16 +1,21 @@
 """What hours does this broker actually trade these symbols?
 
-The fleet's session window (13:30-21:00 UTC) is derived from US cash-equity
-hours, but a CFD venue can quote a narrower or shifted window, and a wrong
-guess shows up as a stream of "Market closed" rejections during what should be
-the trading day. MT5 publishes the answer: symbol_info_session_quote /
-session_trade give the declared sessions per weekday, in the *server's*
-timezone.
+A stream of "Market closed" rejections has two very different causes: the bot
+ran outside the venue's hours, or the account cannot trade those symbols at
+all. This tells them apart from the broker's own data.
 
-This prints them alongside the server-vs-UTC offset so the config window can be
-set from the broker's own data instead of an assumption. It also prints the
-current tick and whether the symbol is flagged tradeable right now, which
-distinguishes "outside hours" from "this account cannot trade this symbol".
+For each symbol it prints trade_mode (0 = disabled for this account, 4 = full),
+the live bid/ask, and — most usefully — how stale the last tick is. A quote
+from hours ago means the venue is simply shut; a fresh quote alongside a
+rejection means something else is wrong.
+
+MT5's symbol_info_session_trade / session_quote give the declared per-weekday
+sessions when the installed build exposes them (several releases do not), in
+server time.
+
+Times printed here are UTC. Note that your shell's log timestamps are LOCAL
+time — mistaking one for the other is exactly how a bot ends up looking like
+it ran mid-session when it ran overnight.
 
 Usage:
     python scripts/diag_session.py --account 1 --symbols BMY HOOD WFC
@@ -35,8 +40,14 @@ from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 _DAYS = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
 
-def _sessions(mt5, symbol: str, getter) -> dict:
-    """{'Mon': ['13:30-20:00', ...]} from MT5's per-weekday session API."""
+def _sessions(mt5, symbol: str, getter) -> dict | None:
+    """{'Mon': ['13:30-20:00', ...]} from MT5's per-weekday session API.
+
+    None when this MetaTrader5 build doesn't expose the session functions —
+    they are absent in several releases, so the caller falls back to the tick
+    clock rather than crashing."""
+    if getter is None:
+        return None
     out: dict[str, list[str]] = {}
     for day in range(7):
         ranges = []
@@ -84,14 +95,10 @@ def main() -> None:
 
     with connect(creds) as mt5:
         now_utc = datetime.now(timezone.utc)
-        tick_any = mt5.symbol_info_tick(symbols[0])
-        if tick_any is not None and getattr(tick_any, "time", 0):
-            server_now = datetime.fromtimestamp(tick_any.time, tz=timezone.utc)
-            offset_h = round((server_now - now_utc).total_seconds() / 3600.0)
-            print(f"# server clock is UTC{offset_h:+d} (from {symbols[0]} tick time)"
-                  " — session times below are in SERVER time, so shift by this to"
-                  " get the UTC window for config `session:`")
-        print(f"# now {now_utc:%Y-%m-%d %H:%M} UTC ({_DAYS[(now_utc.weekday() + 1) % 7]})")
+        print(f"# now {now_utc:%Y-%m-%d %H:%M} UTC "
+              f"({_DAYS[(now_utc.weekday() + 1) % 7]}) — note your shell prints "
+              "local time, which is NOT this")
+        print("# session times below are in SERVER time when MT5 reports them")
         print()
 
         for sym in symbols:
@@ -103,9 +110,22 @@ def main() -> None:
             tick = mt5.symbol_info_tick(sym)
             mode = getattr(info, "trade_mode", None)
             quotes = (f"bid={tick.bid} ask={tick.ask}" if tick else "no tick")
-            print(f"{sym}: trade_mode={mode} {quotes}")
-            trade = _sessions(mt5, sym, mt5.symbol_info_session_trade)
-            quote = _sessions(mt5, sym, mt5.symbol_info_session_quote)
+            # tick.time is a unix instant, so this is how STALE the last quote
+            # is — the most direct evidence of whether the venue is trading now.
+            age = ""
+            if tick is not None and getattr(tick, "time", 0):
+                last = datetime.fromtimestamp(tick.time, tz=timezone.utc)
+                hours = (now_utc - last).total_seconds() / 3600.0
+                age = (f" last tick {last:%m-%d %H:%M} UTC "
+                       f"({hours:.1f}h ago{' — CLOSED' if hours > 0.5 else ' — live'})")
+            print(f"{sym}: trade_mode={mode} {quotes}{age}")
+            trade = _sessions(mt5, sym, getattr(mt5, "symbol_info_session_trade", None))
+            quote = _sessions(mt5, sym, getattr(mt5, "symbol_info_session_quote", None))
+            if trade is None and quote is None:
+                print("   sessions: this MetaTrader5 build does not expose "
+                      "symbol_info_session_* — use the tick age above, or read "
+                      "Specification in the terminal (right-click the symbol)")
+                continue
             print(f"   trade sessions: {trade or '(none declared)'}")
             if quote != trade:
                 print(f"   quote sessions: {quote or '(none declared)'}")
