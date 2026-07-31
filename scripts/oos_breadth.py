@@ -27,11 +27,14 @@ import re
 import sys
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gold_trader.backtest import run_backtest  # noqa: E402
 from gold_trader.breadth import compute_breadth, is_universe_member  # noqa: E402
 from gold_trader.config import Config  # noqa: E402
+from gold_trader.cli_util import expand_paths  # noqa: E402
 from gold_trader.data import load_csv  # noqa: E402
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
@@ -55,7 +58,7 @@ def _base_cfg(csv_path: Path, args) -> Config:
     return cfg
 
 
-def _run_split(csvs, frames, breadth, args, min_net, use, split_ts):
+def _run_split(csvs, frames, breadth, args, min_net, use, split_ts, slips):
     """Return {'train': (n, wins, pnl), 'test': (n, wins, pnl)} pooled over
     every symbol, trades assigned to a segment by entry time vs split_ts."""
     seg = {"train": [0, 0, 0.0], "test": [0, 0, 0.0]}
@@ -64,7 +67,8 @@ def _run_split(csvs, frames, breadth, args, min_net, use, split_ts):
         cfg.breadth.min_net = min_net
         cfg.breadth.use = use
         try:
-            r = run_backtest(frames[csv_path.stem], cfg, breadth=breadth)
+            r = run_backtest(frames[csv_path.stem], cfg, breadth=breadth,
+                             slippage_price=slips.get(csv_path.stem, 0.0))
         except Exception:  # noqa: BLE001
             continue
         for t in r["trades"]:
@@ -89,8 +93,18 @@ def main() -> None:
     p.add_argument("--split", type=float, default=0.6,
                    help="fraction of the timeline used for in-sample (default 0.6)")
     p.add_argument("--lookback", type=int, default=100)
-    p.add_argument("--candidates", default="0,1,2,3,5",
-                   help="comma min_net candidates to select among on train")
+    p.add_argument("--candidates", default="auto",
+                   help="comma min_net candidates, or 'auto' (default) to place "
+                        "them at percentiles of |net breadth| so selectivity "
+                        "means the same thing at any universe size")
+    p.add_argument("--configs", nargs="*", default=[],
+                   help="restrict the tested universe to these configs' symbols "
+                        "(e.g. config/us_fleet/*.yaml). Backtesting names you do "
+                        "not trade contaminates both the breadth tally and the "
+                        "pooled PnL")
+    p.add_argument("--slippage-bp", type=float, default=0.0,
+                   help="per-side cost in basis points of each symbol's median "
+                        "price — the gate's whole job is surviving costs")
     p.add_argument("--stoch", action="store_true",
                    help="enable the stochastic gate on every row (base too) — "
                         "OOS-tests stoch+breadth against a stoch-only base")
@@ -98,30 +112,52 @@ def main() -> None:
 
     all_csvs = sorted(Path(args.data_dir).glob("*_h1.csv"))
     csvs = [c for c in all_csvs if is_universe_member(c.stem)]
+    if args.configs:
+        # keep only the symbols we actually trade, matched on the CSV stem
+        wanted = set()
+        for path in expand_paths(args.configs):
+            slug = re.sub(r"[^a-z0-9]", "_", Config.from_yaml(path).symbol.lower())
+            wanted.add(slug)
+        csvs = [c for c in csvs
+                if re.sub(r"[^a-z0-9]", "_", c.stem.removesuffix("_h1")) in wanted]
     if not csvs:
         sys.stderr.write(f"no US-stock CSVs in {args.data_dir}/\n")
         sys.exit(2)
 
     frames = {c.stem: load_csv(c) for c in csvs}
     breadth = compute_breadth(frames, args.lookback)
+    slips = {s: float(df["close"].median()) * args.slippage_bp / 1e4
+             for s, df in frames.items()}
     split_ts = breadth.index[int(len(breadth) * args.split)]
-    cands = [float(x) for x in args.candidates.split(",") if x.strip()]
+    absb = breadth.abs()
+    absb = absb[absb > 0]
+    if args.candidates.strip().lower() == "auto":
+        # thresholds at percentiles of |net breadth|, so "how selective" means
+        # the same thing whether the universe is 34 symbols or 506
+        pcts = [0, 40, 60, 75, 85, 93]
+        cands = sorted({float(np.percentile(absb, q)) if len(absb) else 0.0
+                        for q in pcts})
+    else:
+        cands = [float(x) for x in args.candidates.split(",") if x.strip()]
+    rng = (f"|net| median {absb.median():.0f}, p90 {absb.quantile(0.9):.0f}, "
+           f"max {absb.max():.0f}" if len(absb) else "no breadth signal")
 
     stoch_tag = " + stoch gate on all rows" if args.stoch else ""
     print(f"# {args.strategy} breadth OOS  (lookback={args.lookback}, "
           f"split={args.split:g} @ {split_ts.date()}, {len(frames)} US stocks"
-          f"{stoch_tag})")
+          f"{stoch_tag}, cost {args.slippage_bp:g}bp/side)")
+    print(f"# breadth scale: {rng}")
     hdr = (f"{'min_net':>8} | {'n':>5} {'win%':>6} {'pnl':>11}  train | "
            f"{'n':>5} {'win%':>6} {'pnl':>11}  test")
     print(hdr)
     print("-" * len(hdr))
 
-    base = _run_split(csvs, frames, breadth, args, 0.0, False, split_ts)
+    base = _run_split(csvs, frames, breadth, args, 0.0, False, split_ts, slips)
     print(f"{'base':>8} | {_fmt(base['train'])}  train | {_fmt(base['test'])}  test")
 
     best_mn, best_train_pnl, rows = None, float("-inf"), {}
     for mn in cands:
-        seg = _run_split(csvs, frames, breadth, args, mn, True, split_ts)
+        seg = _run_split(csvs, frames, breadth, args, mn, True, split_ts, slips)
         rows[mn] = seg
         marker = ""
         if seg["train"][2] > best_train_pnl:
@@ -129,7 +165,8 @@ def main() -> None:
     for mn in cands:
         seg = rows[mn]
         star = " *" if mn == best_mn else "  "
-        print(f"{mn:>8g}{star}| {_fmt(seg['train'])}  train | {_fmt(seg['test'])}  test")
+        print(f"{mn:>8.4g}{star}| {_fmt(seg['train'])}  train | "
+              f"{_fmt(seg['test'])}  test")
 
     print("-" * len(hdr))
     # Verdict: compare the train-selected gate against base on the TEST half.
