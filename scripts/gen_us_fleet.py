@@ -36,7 +36,7 @@ from gold_trader.cli_util import rank_by_spread  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 
 TEMPLATE = """\
-# {symbol}: macd on a spread-selected US-stock fleet.
+# {symbol}: macd + H4 trend filter on a spread-selected US-stock fleet.
 # Out-of-sample on the liquid 100-symbol fleet WITH 5bp/side costs, the breadth
 # gate hurt (base test PnL +316 vs +115 at its best threshold), so `use` is
 # what --no-breadth sets. The edge here came from selecting liquid symbols,
@@ -51,7 +51,7 @@ macd:
   fast: 12
   slow: 26
   signal: 9
-  use_h4_filter: false
+  use_h4_filter: {use_h4}
 {stoch_block}
 breadth:
   use: {breadth_use}
@@ -101,6 +101,11 @@ def main() -> None:
     p.add_argument("--min-net", type=float, default=1)
     p.add_argument("--lookback", type=int, default=100)
     p.add_argument("--magic-base", type=int, default=20260700)
+    p.add_argument("--no-h4-filter", action="store_true",
+                   help="disable the H4 trend gate. Measured OOS on the liquid "
+                        "fleet with 5bp costs: WITH the filter test PnL was "
+                        "+316, WITHOUT it -243 across 3.4x the trades. The "
+                        "filter is where the edge lives — off is for experiments")
     p.add_argument("--no-breadth", action="store_true",
                    help="generate with the breadth gate OFF. On the liquid "
                         "100-symbol fleet the gate LOST out-of-sample: base "
@@ -191,6 +196,7 @@ def main() -> None:
             universe_path=args.universe_path,
             max_universe=args.max_universe,
             breadth_use="false" if args.no_breadth else "true",
+            use_h4="false" if args.no_h4_filter else "true",
         )
         path = out / f"macd_breadth_{_slug(symbol)}.yaml"
         path.write_text(text, encoding="utf-8")
@@ -202,6 +208,9 @@ def main() -> None:
     print(f"\n# {len(paths)} configs. Worst case if every entry fires: "
           f"{args.max_total_positions} positions x {args.per_trade_pct:g}% "
           f"= {args.max_total_positions * args.per_trade_pct:g}% of equity at risk.")
+    if args.no_h4_filter:
+        print("# WARNING: H4 trend filter OFF. Out-of-sample with 5bp costs "
+              "that configuration lost (-243 vs +316 with the filter on).")
     if args.no_breadth:
         print("# breadth gate OFF — the fleet trades every macd cross that "
               "clears the ATR%/ADX filters. Selection by spread is doing the "
