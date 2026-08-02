@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import copy
 import re
 import sys
 from pathlib import Path
@@ -46,7 +47,20 @@ def _config_for_csv(csv_path: Path) -> Path | None:
     return candidate if candidate.exists() else None
 
 
+FLEET_CFGS: dict = {}
+
+
 def _base_cfg(csv_path: Path, args) -> Config:
+    slug = re.sub(r"[^a-z0-9]", "_", csv_path.stem.removesuffix("_h1").lower())
+    live = FLEET_CFGS.get(slug)
+    if live is not None:
+        # the fleet's own parameters, so the test isn't validating a different
+        # strategy than the one that trades (macd.use_h4_filter differs)
+        cfg = copy.deepcopy(live)
+        cfg.strategy = args.strategy
+        cfg.breadth.lookback = args.lookback
+        cfg.stoch.use = args.stoch
+        return cfg
     matched = _config_for_csv(csv_path)
     cfg = Config.from_yaml(matched) if matched else Config()
     cfg.strategy = args.strategy
@@ -114,12 +128,11 @@ def main() -> None:
     csvs = [c for c in all_csvs if is_universe_member(c.stem)]
     if args.configs:
         # keep only the symbols we actually trade, matched on the CSV stem
-        wanted = set()
         for path in expand_paths(args.configs):
-            slug = re.sub(r"[^a-z0-9]", "_", Config.from_yaml(path).symbol.lower())
-            wanted.add(slug)
+            live = Config.from_yaml(path)
+            FLEET_CFGS[re.sub(r"[^a-z0-9]", "_", live.symbol.lower())] = live
         csvs = [c for c in csvs
-                if re.sub(r"[^a-z0-9]", "_", c.stem.removesuffix("_h1")) in wanted]
+                if re.sub(r"[^a-z0-9]", "_", c.stem.removesuffix("_h1")) in FLEET_CFGS]
     if not csvs:
         sys.stderr.write(f"no US-stock CSVs in {args.data_dir}/\n")
         sys.exit(2)

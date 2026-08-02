@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import copy
 import re
 import sys
 from pathlib import Path
@@ -40,9 +41,20 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "_", text.lower())
 
 
+# slug -> the live config for that symbol, populated from --configs. Validating
+# against fib_*.yaml/defaults instead would silently test a different strategy:
+# the fleet sets macd.use_h4_filter false, the default is true.
+FLEET_CFGS: dict = {}
+
+
 def _base_cfg(csv_path: Path, args) -> Config:
-    matched = CONFIG_DIR / f"fib_{_slug(csv_path.stem.removesuffix('_h1'))}.yaml"
-    cfg = Config.from_yaml(matched) if matched.exists() else Config()
+    slug = _slug(csv_path.stem.removesuffix("_h1"))
+    live = FLEET_CFGS.get(slug)
+    if live is not None:
+        cfg = copy.deepcopy(live)          # exactly what the fleet trades
+    else:
+        matched = CONFIG_DIR / f"fib_{slug}.yaml"
+        cfg = Config.from_yaml(matched) if matched.exists() else Config()
     cfg.strategy = args.strategy
     cfg.breadth.use = False   # the gate that lost OOS on this fleet
     return cfg
@@ -92,8 +104,10 @@ def main() -> None:
     csvs = [c for c in sorted(Path(args.data_dir).glob("*_h1.csv"))
             if is_universe_member(c.stem)]
     if args.configs:
-        wanted = {_slug(Config.from_yaml(p_).symbol) for p_ in expand_paths(args.configs)}
-        csvs = [c for c in csvs if _slug(c.stem.removesuffix("_h1")) in wanted]
+        for p_ in expand_paths(args.configs):
+            live = Config.from_yaml(p_)
+            FLEET_CFGS[_slug(live.symbol)] = live
+        csvs = [c for c in csvs if _slug(c.stem.removesuffix("_h1")) in FLEET_CFGS]
     if not csvs:
         sys.stderr.write(f"no US-stock CSVs in {args.data_dir}/\n")
         sys.exit(2)
