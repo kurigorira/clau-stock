@@ -32,7 +32,7 @@ from gold_trader.breadth import (  # noqa: E402
     discover_from_paths,
     discover_universe,
 )
-from gold_trader.cli_util import rank_by_spread  # noqa: E402
+from gold_trader.cli_util import expand_paths, rank_by_spread  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 
 TEMPLATE = """\
@@ -122,6 +122,14 @@ def main() -> None:
                    help="cap on symbols used for the live breadth tally "
                         "(0 = all). Breadth is an aggregate; ~200 estimates the "
                         "same regime as 1000 at a fraction of the fetch cost")
+    p.add_argument("--symbols-from", nargs="*", default=[], metavar="CONFIG",
+                   help="take the symbol list from these configs instead of "
+                        "discovering it (e.g. config/us_fleet/*.yaml). Use this "
+                        "for an A/B second account: re-discovering re-measures "
+                        "spreads, and outside proper market hours that silently "
+                        "yields a different, smaller universe — then the two "
+                        "accounts differ by symbol set as well as by the knob "
+                        "under test, and the comparison means nothing")
     p.add_argument("--limit", type=int, default=0,
                    help="generate at most this many configs, chosen by TIGHTEST "
                         "measured spread (0 = all discovered)")
@@ -145,6 +153,16 @@ def main() -> None:
         sys.exit(2)
 
     spreads: dict[str, float] = {}
+    if args.symbols_from:
+        # mirror an existing fleet exactly; no discovery, no spread re-measure
+        universe = list(dict.fromkeys(
+            Config.from_yaml(p_).symbol for p_ in expand_paths(args.symbols_from)
+        ))
+        print(f"# mirroring {len(universe)} symbols from --symbols-from "
+              "(no re-discovery, so the A/B differs only by the flags you pass)")
+        _write_fleet(universe, spreads, args)
+        return
+
     with connect(creds) as mt5:
         syms = mt5.symbols_get() or []
         if args.universe_path:
@@ -181,6 +199,10 @@ def main() -> None:
         sys.stderr.write(f"no US-stock symbols found on this broker via {where}\n")
         sys.exit(2)
 
+    _write_fleet(universe, spreads, args)
+
+
+def _write_fleet(universe, spreads, args) -> None:
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths = []
