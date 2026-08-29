@@ -182,6 +182,16 @@ def add_indicators(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
             out["close"], cfg.trendline.length
         )
     out["vol_sma"] = out["volume"].rolling(fib.vol_sma_length).mean().shift(1)
+    if cfg.strategy == "kairi":
+        out["kairi_ma"] = out["close"].rolling(cfg.kairi.ma_length).mean()
+    if cfg.strategy == "bollrci":
+        b = cfg.bollrci
+        mid = out["close"].rolling(b.bb_length).mean()
+        std = out["close"].rolling(b.bb_length).std(ddof=0)  # population, per charting convention
+        out["bb_mid"] = mid
+        out["bb_up"] = mid + b.bb_dev * std
+        out["bb_lo"] = mid - b.bb_dev * std
+        out["rci"] = _rci(out["close"], b.rci_length)
     return out
 
 
@@ -505,3 +515,166 @@ def should_exit_macd(position_side: str, bar: pd.Series) -> bool:
     if position_side == "buy":
         return hist <= 0
     return hist >= 0
+
+
+# ---------------------------------------------------------------------------
+# Mean-reversion strategies (strategy: "kairi", "bollrci")
+# ---------------------------------------------------------------------------
+
+
+def _rci(close: pd.Series, length: int) -> pd.Series:
+    """Rank Correlation Index in [-100, +100].
+
+    Spearman rank correlation between time order and price rank over the
+    trailing `length` bars, x100: monotonically rising prices give +100,
+    falling -100. Ties in price take their order of appearance (double-argsort
+    ranks), a negligible approximation on continuous prices. Each window ends
+    at the current bar, so reading it on the last closed bar has no look-ahead.
+    """
+    n = int(length)
+    vals = close.to_numpy(dtype=float)
+    out = np.full(len(vals), np.nan)
+    if len(vals) >= n:
+        from numpy.lib.stride_tricks import sliding_window_view
+        wins = sliding_window_view(vals, n)                    # (m, n)
+        price_rank = wins.argsort(axis=1).argsort(axis=1) + 1  # ascending, 1..n
+        time_rank = np.arange(1, n + 1)                        # oldest=1..newest=n
+        d2 = ((time_rank - price_rank) ** 2).sum(axis=1)
+        rci = (1.0 - 6.0 * d2 / (n * (n * n - 1))) * 100.0
+        out[n - 1:] = rci
+        # windows containing NaN (warm-up of the source series) are undefined
+        bad = np.isnan(wins).any(axis=1)
+        out[n - 1:][bad] = np.nan
+    return pd.Series(out, index=close.index)
+
+
+def _meanrev_common(df_h1: pd.DataFrame, cfg: Config):
+    """Shared NaN/filter guards for the mean-reversion entries.
+
+    Returns (bar, close, atr, no_trade_signal) or (None, ..., signal) when the
+    bar cannot be traded. The ADX trend filter is deliberately NOT applied:
+    mean reversion wants quiet markets, and adx_min is a trend demand.
+    """
+    if len(df_h1) < 2:
+        return None, 0.0, 0.0, Signal(None, 0.0, 0.0, 0.0)
+    bar = df_h1.iloc[-1]
+    close = float(bar["close"])
+    atr = float(bar["atr"])
+    atr_pct = float(bar["atr_pct"])
+    if np.isnan(atr) or np.isnan(atr_pct):
+        return None, close, 0.0 if np.isnan(atr) else atr, Signal(None, 0.0, close, 0.0 if np.isnan(atr) else atr)
+    f = cfg.filters
+    if not (f.atr_pct_min <= atr_pct <= f.atr_pct_max):
+        return None, close, atr, Signal(None, 0.0, close, atr)
+    return bar, close, atr, None
+
+
+def _h4_gate(side: str, df_h4, cfg: Config, use_filter: bool):
+    """(allowed, dir_h4). With the filter on, a dip is bought only in an H4
+    uptrend and a rip sold only in a downtrend — reversion toward the trend,
+    the configuration this project's evidence favours over pure counter-trend."""
+    if not (use_filter and cfg.trend.higher_timeframe):
+        return True, 0
+    if df_h4 is None:
+        return False, 0
+    dir_h4 = h4_trend_dir(df_h4, cfg)
+    if side == "buy":
+        return dir_h4 == 1, dir_h4
+    return dir_h4 == -1, dir_h4
+
+
+def evaluate_kairi_entry(
+    df_h1: pd.DataFrame,
+    df_h4: Optional[pd.DataFrame],
+    cfg: Config,
+) -> Signal:
+    """MA deviation-rate (乖離率) mean-reversion entry on the last closed bar.
+
+    Long when price is stretched threshold_atr_mult ATRs BELOW the MA (short
+    mirror), betting on the snap back. Exit at the MA (should_exit_kairi) or
+    the ATR stop.
+    """
+    bar, close, atr, no_trade = _meanrev_common(df_h1, cfg)
+    if bar is None:
+        return no_trade
+    ma = float(bar["kairi_ma"]) if "kairi_ma" in bar else float("nan")
+    if np.isnan(ma):
+        return Signal(None, 0.0, close, atr)
+
+    k = cfg.kairi.threshold_atr_mult
+    side = None
+    if (ma - close) >= k * atr:
+        side = "buy"
+    elif (close - ma) >= k * atr:
+        side = "sell"
+    if side is None:
+        return Signal(None, 0.0, close, atr)
+
+    allowed, dir_h4 = _h4_gate(side, df_h4, cfg, cfg.kairi.use_h4_filter)
+    if not allowed:
+        return Signal(None, 0.0, close, atr, h4_trend_dir=dir_h4)
+    if cfg.stoch.use and stoch_blocks(side, bar, cfg):
+        return Signal(None, 0.0, close, atr, h4_trend_dir=dir_h4)
+
+    stop_dist = cfg.risk.atr_stop_mult * atr
+    stop = close - stop_dist if side == "buy" else close + stop_dist
+    return Signal(side, stop, close, atr, h4_trend_dir=dir_h4)
+
+
+def should_exit_kairi(position_side: str, bar: pd.Series) -> bool:
+    """Mean tagged: a long exits once close is back at/above the MA, a short
+    once close is back at/below it."""
+    ma = float(bar["kairi_ma"]) if "kairi_ma" in bar else float("nan")
+    if np.isnan(ma):
+        return False
+    close = float(bar["close"])
+    return close >= ma if position_side == "buy" else close <= ma
+
+
+def evaluate_bollrci_entry(
+    df_h1: pd.DataFrame,
+    df_h4: Optional[pd.DataFrame],
+    cfg: Config,
+) -> Signal:
+    """Bollinger-band + RCI mean-reversion entry on the last closed bar.
+
+    The band poke marks the stretch (close beyond the outer band); RCI at an
+    extreme confirms the move is exhausted rather than starting. Both must
+    agree. Exit at the middle band (should_exit_bollrci) or the ATR stop.
+    """
+    bar, close, atr, no_trade = _meanrev_common(df_h1, cfg)
+    if bar is None:
+        return no_trade
+    lo = float(bar["bb_lo"]) if "bb_lo" in bar else float("nan")
+    up = float(bar["bb_up"]) if "bb_up" in bar else float("nan")
+    rci = float(bar["rci"]) if "rci" in bar else float("nan")
+    if np.isnan(lo) or np.isnan(up) or np.isnan(rci):
+        return Signal(None, 0.0, close, atr)
+
+    thr = cfg.bollrci.rci_threshold
+    side = None
+    if close < lo and rci <= -thr:
+        side = "buy"
+    elif close > up and rci >= thr:
+        side = "sell"
+    if side is None:
+        return Signal(None, 0.0, close, atr)
+
+    allowed, dir_h4 = _h4_gate(side, df_h4, cfg, cfg.bollrci.use_h4_filter)
+    if not allowed:
+        return Signal(None, 0.0, close, atr, h4_trend_dir=dir_h4)
+    if cfg.stoch.use and stoch_blocks(side, bar, cfg):
+        return Signal(None, 0.0, close, atr, h4_trend_dir=dir_h4)
+
+    stop_dist = cfg.risk.atr_stop_mult * atr
+    stop = close - stop_dist if side == "buy" else close + stop_dist
+    return Signal(side, stop, close, atr, h4_trend_dir=dir_h4)
+
+
+def should_exit_bollrci(position_side: str, bar: pd.Series) -> bool:
+    """Middle band tagged: a long exits at/above bb_mid, a short at/below."""
+    mid = float(bar["bb_mid"]) if "bb_mid" in bar else float("nan")
+    if np.isnan(mid):
+        return False
+    close = float(bar["close"])
+    return close >= mid if position_side == "buy" else close <= mid

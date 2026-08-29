@@ -182,7 +182,41 @@ class BreadthConfig:
     max_universe: int = 200
 
 
-_STRATEGY_NAMES = ("donchian", "fibonacci", "macd")
+@dataclass
+class KairiConfig:
+    """Parameters for strategy: "kairi" (MA deviation-rate mean reversion).
+
+    The classic 移動平均線+乖離率 combination: when price is stretched too far
+    from its moving average, bet on the snap back to the mean. The stretch is
+    measured in ATRs rather than a fixed percent so one threshold works across
+    a $25 and a $1000 stock. Long when close <= MA - threshold_atr_mult*ATR
+    (and, with the H4 filter on, only in an H4 uptrend — buying dips inside a
+    rising market, not knife-catching a downtrend); short is the mirror. Exit
+    when price tags the MA again, plus the usual ATR stop.
+    """
+    ma_length: int = 25
+    threshold_atr_mult: float = 2.0   # deviation from MA required, in ATRs
+    use_h4_filter: bool = True        # revert only toward the H4 trend
+
+
+@dataclass
+class BollRciConfig:
+    """Parameters for strategy: "bollrci" (Bollinger Bands + RCI reversion).
+
+    The ボリンジャーバンド+RCI combination: a band poke marks the stretch, the
+    Rank Correlation Index confirms the move is exhausted rather than starting.
+    Long when close < lower band AND RCI <= -rci_threshold; short mirror. Exit
+    when price crosses the middle band, plus the ATR stop. bb_dev uses the
+    population std (ddof=0, the charting convention).
+    """
+    bb_length: int = 20
+    bb_dev: float = 2.0
+    rci_length: int = 9
+    rci_threshold: float = 80.0       # |RCI| required to confirm exhaustion
+    use_h4_filter: bool = True        # revert only toward the H4 trend
+
+
+_STRATEGY_NAMES = ("donchian", "fibonacci", "macd", "kairi", "bollrci")
 
 @dataclass
 class NotifyConfig:
@@ -206,6 +240,8 @@ class Config:
     breakout: BreakoutConfig = field(default_factory=BreakoutConfig)
     fibonacci: FibonacciConfig = field(default_factory=FibonacciConfig)
     macd: MacdConfig = field(default_factory=MacdConfig)
+    kairi: KairiConfig = field(default_factory=KairiConfig)
+    bollrci: BollRciConfig = field(default_factory=BollRciConfig)
     stoch: StochConfig = field(default_factory=StochConfig)
     trendline: TrendlineConfig = field(default_factory=TrendlineConfig)
     breadth: BreadthConfig = field(default_factory=BreadthConfig)
@@ -257,6 +293,8 @@ class Config:
             breakout=BreakoutConfig(**(raw.get("breakout") or {})),
             fibonacci=FibonacciConfig(**(raw.get("fibonacci") or {})),
             macd=MacdConfig(**(raw.get("macd") or {})),
+            kairi=KairiConfig(**(raw.get("kairi") or {})),
+            bollrci=BollRciConfig(**(raw.get("bollrci") or {})),
             stoch=StochConfig(**(raw.get("stoch") or {})),
             trendline=TrendlineConfig(**(raw.get("trendline") or {})),
             breadth=BreadthConfig(**(raw.get("breadth") or {})),

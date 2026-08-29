@@ -137,6 +137,37 @@ empirically. `config/macd_example.yaml` (H4-filtered) and `config/macd_pure.yaml
 MACD params live under `macd:` and are independent of the `fibonacci:` MACD
 filter, so tuning one never perturbs the other.
 
+### kairi (exploratory) — MA + deviation-rate mean reversion
+
+Strategy 6-2 of the reference text (移動平均線+乖離率). Long when price is
+stretched `kairi.threshold_atr_mult` ATRs *below* the `ma_length` SMA — the
+stretch is measured in ATRs, not percent, so one threshold fits a $25 and a
+$1000 stock — and, with `use_h4_filter` on (default), only inside an H4
+uptrend: buying dips in a rising market rather than knife-catching. Short is
+the mirror. Exit when price tags the MA again, plus the ATR stop. The ADX
+trend demand is deliberately not applied — mean reversion wants quiet markets.
+
+### bollrci (exploratory) — Bollinger Bands + RCI mean reversion
+
+Strategy 6-6 of the reference text (ボリンジャーバンド+RCI), moved from its
+day-trade framing onto H1 because measured costs (2–8bp/side) make faster
+timeframes uneconomic here. Long when close pokes below the lower
+`bb_length`/`bb_dev` band AND RCI(`rci_length`) <= −`rci_threshold` confirms
+exhaustion; short mirror; H4 filter as above. Exit at the middle band, plus
+the ATR stop.
+
+Both are validated by `scripts/oos_meanrev.py`, which train-selects each
+strategy's key knob (kairi: `threshold_atr_mult`; bollrci: `rci_threshold`)
+and reports the held-out half next to the incumbent macd fleet on the same
+symbols and costs:
+
+```
+python scripts/oos_meanrev.py --configs config/us_fleet/*.yaml --slippage-bp 5
+```
+
+Neither ships to a live fleet unless its TEST PnL is positive — the same bar
+every other component here had to clear.
+
 ### Stochastic confirmation (`stoch:`) — shared win-rate filter
 
 An optional stochastic-oscillator gate that **any** strategy can switch on via

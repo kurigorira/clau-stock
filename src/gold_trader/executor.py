@@ -22,8 +22,12 @@ from .strategy import (
     add_indicators,
     evaluate_fib_entry,
     evaluate_last_bar,
+    evaluate_bollrci_entry,
+    evaluate_kairi_entry,
     evaluate_macd_entry,
     should_exit,
+    should_exit_bollrci,
+    should_exit_kairi,
     should_exit_macd,
 )
 
@@ -263,6 +267,10 @@ class Executor:
             signal = evaluate_fib_entry(data, data_h4, self.cfg)
         elif self.cfg.strategy == "macd":
             signal = evaluate_macd_entry(data, data_h4, self.cfg)
+        elif self.cfg.strategy == "kairi":
+            signal = evaluate_kairi_entry(data, data_h4, self.cfg)
+        elif self.cfg.strategy == "bollrci":
+            signal = evaluate_bollrci_entry(data, data_h4, self.cfg)
         else:
             signal = evaluate_last_bar(data, self.cfg, data_h4)
         positions = mt5_client.open_positions(
@@ -271,7 +279,11 @@ class Executor:
 
         # exits first — macd uses the opposite-cross exit; every other strategy
         # uses the Donchian reverse-channel exit.
-        exit_fn = should_exit_macd if self.cfg.strategy == "macd" else should_exit
+        exit_fn = {
+            "macd": should_exit_macd,
+            "kairi": should_exit_kairi,      # mean (MA) tagged
+            "bollrci": should_exit_bollrci,  # middle band tagged
+        }.get(self.cfg.strategy, should_exit)
         for p in positions:
             side = "buy" if p.type == 0 else "sell"  # POSITION_TYPE_BUY = 0
             if exit_fn(side, data.iloc[-1]):

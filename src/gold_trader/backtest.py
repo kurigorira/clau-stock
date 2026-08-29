@@ -12,7 +12,11 @@ from .data import resample_ohlcv
 from .strategy import (
     add_indicators,
     evaluate_fib_entry,
+    evaluate_bollrci_entry,
+    evaluate_kairi_entry,
     evaluate_macd_entry,
+    should_exit_bollrci,
+    should_exit_kairi,
     should_exit_macd,
     stoch_blocks,
     trendline_blocks,
@@ -61,6 +65,8 @@ def run_backtest(
         return _run_backtest_fib(df, cfg, slippage_price=slippage_price, breadth=breadth)
     if cfg.strategy == "macd":
         return _run_backtest_macd(df, cfg, slippage_price=slippage_price, breadth=breadth)
+    if cfg.strategy in ("kairi", "bollrci"):
+        return _run_backtest_meanrev(df, cfg, slippage_price=slippage_price, breadth=breadth)
     bmap = _breadth_map(cfg, breadth)
     data = add_indicators(df, cfg)
     trades: List[Trade] = []
@@ -333,6 +339,104 @@ def _run_backtest_macd(
                 k = int(closed_counts[i])
                 df_h4 = h4.iloc[:k]
             sig = evaluate_macd_entry(data.iloc[: i + 1], df_h4, cfg)
+            if sig.side is None:
+                continue
+            if bmap is not None and breadth_blocks(
+                sig.side, bmap.get(bar.name, float("nan")), cfg.breadth.min_net
+            ):
+                continue
+            side = sig.side
+            entry_price = sig.entry_ref + (
+                slippage_price if side == "buy" else -slippage_price
+            )
+            entry_time = bar.name
+            entry_i = i
+            stop = sig.stop
+
+    return _summary(trades)
+
+
+def _run_backtest_meanrev(
+    df: pd.DataFrame,
+    cfg: Config,
+    *,
+    slippage_price: float = 0.0,
+    breadth: "pd.Series | None" = None,
+) -> dict:
+    """Backtest for the mean-reversion strategies ("kairi", "bollrci").
+
+    Both share one loop because they differ only in the entry evaluator and
+    the mean that ends the trade (MA vs middle band). Structure mirrors the
+    macd loop: H4 synthesised with the same no-lookahead rule when the
+    strategy's H4 filter is on, SL fills first when stop and mean-tag land on
+    the same bar, reasons 'sl' / 'channel' (channel = mean tagged).
+    """
+    if cfg.strategy == "kairi":
+        evaluate, should_exit_fn = evaluate_kairi_entry, should_exit_kairi
+        use_h4 = cfg.kairi.use_h4_filter and bool(cfg.trend.higher_timeframe)
+        warmup = max(cfg.kairi.ma_length, cfg.risk.atr_length) + 2
+    else:
+        evaluate, should_exit_fn = evaluate_bollrci_entry, should_exit_bollrci
+        use_h4 = cfg.bollrci.use_h4_filter and bool(cfg.trend.higher_timeframe)
+        warmup = max(cfg.bollrci.bb_length, cfg.bollrci.rci_length,
+                     cfg.risk.atr_length) + 2
+
+    bmap = _breadth_map(cfg, breadth)
+    data = add_indicators(df, cfg)
+    if use_h4:
+        h4 = add_indicators(resample_ohlcv(df, "4h"), cfg)
+        closed_counts = h4.index.searchsorted(
+            data.index - pd.Timedelta(hours=3), side="right"
+        )
+    else:
+        h4 = None
+        closed_counts = None
+
+    trades: List[Trade] = []
+    side: str | None = None
+    entry_price = 0.0
+    entry_time: pd.Timestamp | None = None
+    entry_i = 0
+    stop = 0.0
+
+    for i in range(warmup, len(data)):
+        bar = data.iloc[i]
+
+        if side is not None:
+            hit_stop = (
+                (side == "buy" and bar["low"] <= stop)
+                or (side == "sell" and bar["high"] >= stop)
+            )
+            exit_signal = should_exit_fn(side, bar)
+            if hit_stop or exit_signal:
+                exit_price = stop if hit_stop else float(bar["close"])
+                exit_price -= slippage_price if side == "buy" else -slippage_price
+                pnl = (
+                    exit_price - entry_price
+                    if side == "buy"
+                    else entry_price - exit_price
+                )
+                trades.append(
+                    Trade(
+                        side=side,
+                        entry_time=entry_time,  # type: ignore[arg-type]
+                        entry_price=entry_price,
+                        exit_time=bar.name,
+                        exit_price=exit_price,
+                        stop=stop,
+                        pnl_price=pnl,
+                        reason="sl" if hit_stop else "channel",
+                        bars_held=i - entry_i,
+                    )
+                )
+                side = None
+
+        if side is None:
+            df_h4 = None
+            if use_h4:
+                k = int(closed_counts[i])
+                df_h4 = h4.iloc[:k]
+            sig = evaluate(data.iloc[: i + 1], df_h4, cfg)
             if sig.side is None:
                 continue
             if bmap is not None and breadth_blocks(
