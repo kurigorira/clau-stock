@@ -16,15 +16,22 @@ on its own data, and symbols where **both** strategies lost are not launched.
 Preset files are named `fib_<symbol>.yaml` regardless of the strategy inside
 (historical; the file name keys the magic_number and start.bat entries).
 
-`start.bat` launches:
+`start.bat` launches (current layout, 2026-08 — the US-fleet era):
 
-| account | symbols | strategy |
+| account | fleet | strategy |
 |---|---|---|
-| 1 | GBPUSD, USDCHF, BTCUSD, NG-Cr | fibonacci |
-| 1 | USDCAD, XAUUSD, XAUEUR, Cocoa-Cr, Coffee-Cr | donchian |
-| 2 | COST, HD, JNJ, KO, MCD, NKE, PEP, UNH, META.24H, GOOG.24H | fibonacci |
-| 2 | JPN225ft, AMD, MSFT, NFLX, NVIDIA, META, BAC, ORCL, TOYOTA, MO, ALIBABA, BMW, AZN | donchian |
-| 3 | EURUSD (`fib_eurusd_small.yaml`, live JPY 20k) | **PAUSED** — 12-month train PF 0.32; the start.bat line is commented out. Terminal still opens for manual position management. |
+| 1 (demo) | `config/us_fleet/*.yaml` — 100 spread-selected US stocks | macd + H4 trend filter (OOS test +276) |
+| 2 (demo) | `config/us_fleet_a2/*.yaml` — same 100 symbols | macd + H4 + stoch 80/20 — live A/B vs account 1 (OOS test +467) |
+| 4 (demo) | `config/us_fleet_a4/*.yaml` — same 100 symbols | bollrci mean reversion, thr=60 (OOS test +502, 56% win) |
+| 3 (LIVE) | none — terminal opens for **manual management only** | **PAUSED** — 12-month train PF 0.32 on EURUSD-small; no bot line by design |
+
+The `us_fleet*` dirs are machine-generated with live spread data
+(`scripts/gen_us_fleet.py`) and are **not** committed — generate them before
+the first launch. `start.bat` refuses to start a bot whose fleet dir is empty.
+
+The fibonacci/donchian fleet described below is the **previous era** and is no
+longer launched by `start.bat`; the presets stay in the repo for reference and
+for adopting any leftover open positions via their magic numbers.
 
 The fleet is groomed by the monthly 12-month spread-aware review
 (`scripts/review_fleet.bat`). First review (2026-07) removed 11 symbols
@@ -507,13 +514,23 @@ MT5_PASSWORD_2=<account 2 password>
 MT5_SERVER_2=VantageInternational-Live
 MT5_PATH_2=C:\Vantage MT5 - Account 2\terminal64.exe
 
-MT5_LOGIN_3=<account 3 login>           # small live JPY 20k account
+MT5_LOGIN_3=<account 3 login>           # small live JPY 20k account - manual only
 MT5_PASSWORD_3=<account 3 password>
 MT5_SERVER_3=VantageInternational-Live
-MT5_PATH_3=C:\Vantage MT5 - Account 3\terminal64.exe
+MT5_PATH_3=C:\Vantage MT5 - Live\terminal64.exe
+
+MT5_LOGIN_4=<account 4 login>           # demo - bollrci mean-reversion fleet
+MT5_PASSWORD_4=<account 4 password>
+MT5_SERVER_4=VantageTradingLtd-Demo
+MT5_PATH_4=C:\Vantage MT5 - Account 4\terminal64.exe
 ```
 
 Use `VantageInternational-Demo` instead of `-Live` for demo accounts.
+Each suffix must appear exactly once: `python-dotenv` silently lets a later
+duplicate shadow an earlier one, which is how a demo credential block pasted
+at the bottom of the file can hijack (or protect) the live suffix unnoticed.
+Every account needs its own MT5 terminal install (one folder = one instance
+= one login); point each `MT5_PATH_N` at that account's own `terminal64.exe`.
 
 The legacy un-suffixed (`MT5_LOGIN` / `MT5_PASSWORD` / ...) keys are still
 used if you run `python scripts/run_live.py` without `--account`.
@@ -527,9 +544,10 @@ start.bat            # opens all three MT5 terminals + spawns three bot windows
 or manually:
 
 ```bash
-python scripts/run_live.py --account 1 config/example.yaml config/eurusd.yaml ...
-python scripts/run_live.py --account 2 config/nvidia.yaml config/sp500ft.yaml ...
-python scripts/run_live.py --account 3 config/eurusd_small.yaml
+python scripts/run_live.py --account 1 config/us_fleet/*.yaml
+python scripts/run_live.py --account 2 config/us_fleet_a2/*.yaml
+python scripts/run_live.py --account 4 config/us_fleet_a4/*.yaml
+# account 3 (live) has no bot: manual management only
 ```
 
 Each `--account N` instance reads `MT5_LOGIN_N` / `MT5_PASSWORD_N` /

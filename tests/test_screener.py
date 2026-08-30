@@ -104,29 +104,56 @@ def test_existing_symbols_covers_real_config_dir():
         assert expected in syms
 
 
-def test_launched_symbols_reflects_start_bat():
-    repo_root = Path(__file__).resolve().parents[1]
-    fleet = launched_symbols(repo_root)
-    # launched fleet members (post 12-month review)
-    for expected in ("XAUUSD", "BTCUSD", "NG-Cr", "XAUEUR", "META.24H",
-                     "ORCL", "TOYOTA", "Cocoa-Cr"):
-        assert expected in fleet, expected
-    # benched presets exist in config/ but are NOT in start.bat
-    for benched in ("GOOG", "PFIZER", "AAPL", "JPM", "CL-OIL", "TSLA"):
-        assert benched not in fleet, benched
-    # acc3 (live) is paused via REM - its preset must not count as launched
-    assert "EURUSD" not in fleet
+def _fake_repo(tmp_path, bat_lines):
+    (tmp_path / "start.bat").write_text("\n".join(bat_lines), encoding="utf-8")
+    fleet = tmp_path / "config" / "us_fleet"
+    fleet.mkdir(parents=True)
+    (fleet / "macd_aapl.yaml").write_text(
+        "symbol: AAPL\nstrategy: macd\n", encoding="utf-8"
+    )
+    (fleet / "macd_msft.yaml").write_text(
+        "symbol: MSFT\nstrategy: macd\n", encoding="utf-8"
+    )
+    cfg = tmp_path / "config"
+    (cfg / "fib_gold.yaml").write_text(
+        "symbol: XAUUSD\nstrategy: fibonacci\n", encoding="utf-8"
+    )
+    (cfg / "fib_benched.yaml").write_text(  # exists but never referenced
+        "symbol: GOOG\nstrategy: fibonacci\n", encoding="utf-8"
+    )
+    return tmp_path
 
 
-def test_launched_strategies_maps_symbol_to_strategy():
+def test_launched_symbols_reflects_start_bat(tmp_path):
+    repo = _fake_repo(tmp_path, [
+        r"start x cmd /k python scripts\run_live.py --account 1 config\us_fleet\*.yaml",
+        r"start x cmd /k python scripts\run_live.py --account 2 config\fib_gold.yaml",
+        r"REM start x cmd /k python scripts\run_live.py --account 3 config\fib_benched.yaml",
+    ])
+    fleet = launched_symbols(repo)
+    assert fleet == {"AAPL", "MSFT", "XAUUSD"}
+    # fib_benched.yaml exists in config/ but is only on a REM'd line
+    assert "GOOG" not in fleet
+
+
+def test_launched_strategies_maps_symbol_to_strategy(tmp_path):
     from gold_trader.screener import launched_strategies
 
+    repo = _fake_repo(tmp_path, [
+        r"start x cmd /k python scripts\run_live.py --account 1 config\us_fleet\*.yaml",
+        r"start x cmd /k python scripts\run_live.py --account 2 config\fib_gold.yaml",
+    ])
+    strats = launched_strategies(repo)
+    assert strats["AAPL"] == "macd"
+    assert strats["MSFT"] == "macd"
+    assert strats["XAUUSD"] == "fibonacci"
+
+
+def test_launched_symbols_real_repo_missing_fleet_dirs_is_empty():
+    # the us_fleet dirs are machine-generated and absent from the repo/CI;
+    # parsing the real start.bat must not crash and yields no symbols here
     repo_root = Path(__file__).resolve().parents[1]
-    strats = launched_strategies(repo_root)
-    assert strats["XAUUSD"] == "donchian"
-    assert strats["BTCUSD"] == "fibonacci"
-    assert strats["META.24H"] == "fibonacci"
-    assert strats["ORCL"] == "donchian"
+    assert launched_symbols(repo_root) == set()
 
 
 def test_launched_symbols_missing_bat_returns_empty(tmp_path):

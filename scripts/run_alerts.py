@@ -31,6 +31,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gold_trader import alerts, mt5_client, notify  # noqa: E402
+from gold_trader.cli_util import expand_paths  # noqa: E402
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.logger import setup_logging  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
@@ -64,7 +65,7 @@ def main() -> None:
 
     load_dotenv()
     watch = _load_watchlist(args.watchlist)
-    preset_symbols = [Config.from_yaml(p).symbol for p in args.configs]
+    preset_symbols = [Config.from_yaml(p).symbol for p in expand_paths(args.configs)]
     # Preserve insertion order, drop dupes
     symbols = list(dict.fromkeys(preset_symbols + watch["extra_symbols"]))
     if not symbols:

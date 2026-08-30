@@ -81,12 +81,22 @@ def launched_strategies(repo_root: str | Path) -> dict[str, str]:
         line for line in bat.read_text(encoding="utf-8").splitlines()
         if not line.lstrip().lower().startswith("rem")
     ]
-    names = set(
-        re.findall(r"config\\((?:fib|candidate)_[a-z0-9_.]+\.yaml)", "\n".join(active_lines))
+    # Two path shapes appear in start.bat bot lines: explicit presets
+    # (config\fib_msft.yaml) and generated-fleet globs (config\us_fleet\*.yaml).
+    # The fleet dirs are machine-generated and may be absent (e.g. in CI);
+    # a missing dir simply contributes no symbols.
+    refs = set(
+        re.findall(r"config\\[a-z0-9_.\\*-]+\.yaml", "\n".join(active_lines), re.I)
     )
+    paths: set[Path] = set()
+    for ref in refs:
+        rel = ref.replace("\\", "/")
+        if "*" in rel:
+            paths.update(root.glob(rel))
+        else:
+            paths.add(root / rel)
     out: dict[str, str] = {}
-    for name in names:
-        p = root / "config" / name
+    for p in sorted(paths):
         if not p.exists():
             continue
         try:

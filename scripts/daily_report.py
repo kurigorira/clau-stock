@@ -75,7 +75,7 @@ def main() -> None:
         pass
 
     parser = argparse.ArgumentParser(description="clau-stock twice-daily status email")
-    parser.add_argument("--accounts", nargs="*", default=["1", "2", "3"])
+    parser.add_argument("--accounts", nargs="*", default=["1", "2", "3", "4"])
     parser.add_argument("--dry-run", action="store_true", help="print the report, don't email it")
     args = parser.parse_args()
 
