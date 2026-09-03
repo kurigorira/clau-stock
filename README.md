@@ -421,6 +421,28 @@ Test manually with `python scripts\daily_report.py --dry-run` (prints the
 report, sends nothing) or `--accounts 1` to check a single account.
 Progress appends to `logs\daily_report.log`.
 
+## Monthly operating statistics
+
+`scripts/monthly_report.py` aggregates every account's closed-trade history
+into calendar months (JST): trades, win rate, profit factor, gross
+profit/loss, net PnL, deposits/withdrawals, reconstructed end-of-month
+balances, and a per-strategy breakdown. One closed **position** counts as
+one trade (partial closes collapse) and its PnL includes commission and
+swap on every deal of the position, the entry deal's included. Each
+account's MT5 terminal must be running and logged in.
+
+```bash
+python scripts/monthly_report.py                    # accounts 1 2 3 4, last 6 months
+python scripts/monthly_report.py --months 12
+python scripts/monthly_report.py --csv logs/monthly.csv
+python scripts/monthly_report.py --email            # send via GMAIL_* env vars
+```
+
+Silent months inside the window are listed as zero rows so gaps stay
+visible. Deal timestamps come from the broker's server clock, so a trade
+closed within a few hours of a JST month boundary can land in the
+neighboring month — noise at monthly granularity.
+
 ## Live-vs-backtest scorecard
 
 `scripts/scorecard.py` answers the most important question once real trades
