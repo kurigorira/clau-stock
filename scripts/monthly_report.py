@@ -73,6 +73,22 @@ def main() -> None:
     parser.add_argument("--accounts", nargs="*", default=["1", "2", "3", "4"])
     parser.add_argument("--months", type=int, default=6, help="how many months back (default 6)")
     parser.add_argument("--csv", default=None, help="also write tidy per-month rows to this CSV")
+    parser.add_argument(
+        "--markdown",
+        nargs="?",
+        const="reports/monthly.md",
+        default=None,
+        metavar="PATH",
+        help="also write a Markdown report (default path reports/monthly.md). "
+        "Account logins are masked - see --show-logins",
+    )
+    parser.add_argument(
+        "--show-logins",
+        action="store_true",
+        help="write full account numbers into the Markdown report instead of "
+        "masking them. A login plus the server name identifies the account to "
+        "anyone holding the password; leave this off for anything you publish",
+    )
     parser.add_argument("--email", action="store_true", help="send the report via GMAIL_* env vars")
     args = parser.parse_args()
 
@@ -125,6 +141,15 @@ def main() -> None:
             w.writeheader()
             w.writerows(rows)
         print(f"csv written: {out} ({len(rows)} rows)")
+
+    if args.markdown:
+        md = monthly.format_monthly_markdown(
+            reports, generated_at, mask_logins=not args.show_logins
+        )
+        out = Path(args.markdown)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(md + "\n", encoding="utf-8")
+        print(f"markdown written: {out}")
 
     if args.email:
         ok = [r for r in reports if r.error is None]

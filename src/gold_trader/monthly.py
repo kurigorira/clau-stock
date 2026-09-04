@@ -234,6 +234,129 @@ def format_monthly_report(reports: list[AccountMonthly], generated_at: str) -> s
     return "\n".join(lines)
 
 
+def mask_login(login: int) -> str:
+    """Account number with all but the last 3 digits hidden.
+
+    A login is half of a credential pair (login + server identify the
+    account to anyone with the password), so published reports carry the
+    masked form by default - enough to tell accounts apart, not enough to
+    address one.
+    """
+    s = str(login)
+    return f"***{s[-3:]}" if len(s) > 3 else "***"
+
+
+def format_monthly_markdown(
+    reports: list[AccountMonthly],
+    generated_at: str,
+    *,
+    mask_logins: bool = True,
+) -> str:
+    """Markdown version of the monthly report, for committing to the repo.
+
+    Same numbers as format_monthly_report; account logins are masked unless
+    the caller opts out.
+    """
+    def _num(x: float) -> str:
+        sign = "+" if x > 0 else ""
+        return f"{sign}{x:,.0f}"
+
+    out: list[str] = [
+        "# Monthly operating statistics",
+        "",
+        f"Generated {generated_at} from live MT5 account history "
+        "(`scripts/monthly_report.py --markdown`).",
+        "",
+        "One closed **position** counts as one trade (partial closes collapse) and "
+        "its PnL includes commission and swap on every deal of the position. Months "
+        "are JST calendar months; a month with no trades is shown as a zero row. "
+        "Deposits and withdrawals are reported separately from trading PnL, so a "
+        "funded month cannot read as a winning one. All amounts in JPY.",
+        "",
+    ]
+
+    ok = [r for r in reports if r.error is None and r.months]
+    if ok:
+        out += [
+            "## Summary",
+            "",
+            "| account | months | trades | win % | PF | net PnL |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+        for r in ok:
+            trades = sum(m.trades for m in r.months)
+            wins = sum(m.wins for m in r.months)
+            gp = sum(m.gross_profit for m in r.months)
+            gl = sum(m.gross_loss for m in r.months)
+            wr = 100.0 * wins / trades if trades else 0.0
+            pf = gp / -gl if gl < 0 else (float("inf") if gp > 0 else 0.0)
+            pf_txt = "inf" if pf == float("inf") else f"{pf:.2f}"
+            label = _account_label(r, mask_logins)
+            out.append(
+                f"| {label} | {len(r.months)} | {trades} | {wr:.1f} | "
+                f"{pf_txt} | {_num(gp + gl)} |"
+            )
+        out.append("")
+
+    for r in reports:
+        out.append(f"## Account {_account_label(r, mask_logins)}")
+        out.append("")
+        if r.error:
+            out += [f"Not reported: {r.error}", ""]
+            continue
+        if not r.months:
+            out += ["No closed trades or balance operations in the window.", ""]
+            continue
+
+        out += [
+            "| month | trades | win % | PF | gross + | gross - | net | in/out | end balance |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+        for m in r.months:
+            end_bal = f"{m.end_balance:,.0f}" if m.end_balance is not None else "-"
+            out.append(
+                f"| {m.month} | {m.trades} | {m.win_rate:.1f} | {_pf_txt(m)} | "
+                f"{_num(m.gross_profit)} | {_num(m.gross_loss)} | {_num(m.net)} | "
+                f"{_num(m.balance_ops)} | {end_bal} |"
+            )
+        total_trades = sum(m.trades for m in r.months)
+        total_wins = sum(m.wins for m in r.months)
+        total_net = sum(m.net for m in r.months)
+        wr = 100.0 * total_wins / total_trades if total_trades else 0.0
+        out.append(
+            f"| **total** | **{total_trades}** | **{wr:.1f}** | | | | "
+            f"**{_num(total_net)}** | | **{r.balance:,.0f}** |"
+        )
+        out.append("")
+
+        strat_rows = [
+            (m.month, strat, pnl, n)
+            for m in r.months
+            for strat, (pnl, n) in sorted(m.by_strategy.items())
+        ]
+        if strat_rows:
+            out += [
+                "By strategy:",
+                "",
+                "| month | strategy | net | trades |",
+                "|---|---|---:|---:|",
+            ]
+            out += [
+                f"| {month} | {strat} | {_num(pnl)} | {n} |"
+                for month, strat, pnl, n in strat_rows
+            ]
+            out.append("")
+
+    return "\n".join(out)
+
+
+def _account_label(r: AccountMonthly, mask_logins: bool) -> str:
+    if not r.login:
+        return r.account
+    shown = mask_login(r.login) if mask_logins else str(r.login)
+    return f"{r.account} ({shown})"
+
+
 def monthly_csv_rows(reports: list[AccountMonthly]) -> list[dict[str, Any]]:
     """Tidy rows (one per account x month) for --csv."""
     rows: list[dict[str, Any]] = []

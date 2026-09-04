@@ -435,8 +435,18 @@ account's MT5 terminal must be running and logged in.
 python scripts/monthly_report.py                    # accounts 1 2 3 4, last 6 months
 python scripts/monthly_report.py --months 12
 python scripts/monthly_report.py --csv logs/monthly.csv
+python scripts/monthly_report.py --markdown         # -> reports/monthly.md
 python scripts/monthly_report.py --email            # send via GMAIL_* env vars
 ```
+
+`--markdown [PATH]` writes the same figures as a Markdown report meant to be
+committed (`reports/` is tracked; `logs/` is not). Account numbers are masked
+to their last three digits there — a login plus the server name identifies the
+account to anyone holding the password, and a report is the kind of file that
+gets forwarded. `--show-logins` opts out. Keep in mind that publishing a
+report publishes the balances and PnL in it: this repository is private
+today, so a committed report is visible to its collaborators, and would
+become world-readable if the repository were ever made public.
 
 Silent months inside the window are listed as zero rows so gaps stay
 visible. Deal timestamps come from the broker's server clock, so a trade
