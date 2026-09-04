@@ -108,9 +108,31 @@ def timeframe(name: str) -> int:
     return getattr(mt5, _TIMEFRAME_MAP_LOOKUP[name])
 
 
+def ensure_symbol_visible(symbol: str) -> bool:
+    """Add `symbol` to Market Watch if the terminal is hiding it.
+
+    History calls fail with the generic (-1, 'Terminal: Call failed') for a
+    symbol the terminal knows but has not selected, so anything that reads
+    bars must select first. True when the symbol is (now) visible.
+    """
+    mt5 = _mt5()
+    info = mt5.symbol_info(symbol)
+    if info is None:
+        return False
+    if getattr(info, "visible", True):
+        return True
+    return bool(mt5.symbol_select(symbol, True))
+
+
 def fetch_ohlcv(symbol: str, tf_name: str, n_bars: int) -> pd.DataFrame:
     mt5 = _mt5()
     rates = mt5.copy_rates_from_pos(symbol, timeframe(tf_name), 0, n_bars)
+    if rates is None or len(rates) == 0:
+        # Most often the symbol simply is not in Market Watch yet (a fleet
+        # symbol whose executor has not run, or an alert-only symbol).
+        # Select it and retry once before giving up.
+        if ensure_symbol_visible(symbol):
+            rates = mt5.copy_rates_from_pos(symbol, timeframe(tf_name), 0, n_bars)
     if rates is None or len(rates) == 0:
         raise RuntimeError(f"no rates for {symbol} {tf_name}: {mt5.last_error()}")
     df = pd.DataFrame(rates)

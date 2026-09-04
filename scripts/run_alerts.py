@@ -104,11 +104,18 @@ def main() -> None:
     log.info("alerts: symbols = %s", ", ".join(symbols))
 
     n_bars = watch["window_minutes"] + 2  # 1 extra to drop the still-forming bar
+    # A symbol the terminal can never serve (not in this account's catalog,
+    # no M1 history) would otherwise raise on every poll forever. Warn once
+    # per symbol, then retire it after MAX_FAILS consecutive failures so the
+    # log stays readable and the poll cycle stays fast.
+    MAX_FAILS = 5
+    fails: dict[str, int] = {}
     with connect(creds):
         while True:
-            for sym in symbols:
+            for sym in list(symbols):
                 try:
                     raw = mt5_client.fetch_ohlcv(sym, "M1", n_bars)
+                    fails.pop(sym, None)
                     closed = raw.iloc[:-1]  # drop the still-forming M1 bar
                     change = alerts.evaluate_change(sym, closed, watch["window_minutes"])
                     if change is None:
@@ -126,7 +133,19 @@ def main() -> None:
                         log=log,
                     )
                 except Exception as exc:  # noqa: BLE001
-                    log.exception(f"alerts: poll failed for {sym}: {exc}")
+                    n = fails[sym] = fails.get(sym, 0) + 1
+                    if n == 1:
+                        log.warning("alerts: poll failed for %s: %s", sym, exc)
+                    if n >= MAX_FAILS:
+                        symbols.remove(sym)
+                        log.warning(
+                            "alerts: dropping %s after %d consecutive failures "
+                            "(not tradable/visible on account %s?)",
+                            sym, n, args.account,
+                        )
+            if not symbols:
+                log.error("alerts: no watchable symbols left, exiting")
+                return
             time_mod.sleep(watch["poll_seconds"])
 
 
