@@ -40,6 +40,9 @@ class TradeRow:
     strategy: str
     close_time: datetime
     net: float
+    # None when the opening deal falls outside the queried window, so the
+    # position's real entry time is unknown rather than zero.
+    hours_held: float | None = None
 
 
 @dataclass
@@ -101,6 +104,11 @@ def build_trades(
             continue  # still open
         net = sum(float(d.profit) + float(d.commission) + float(d.swap) for d in ds)
         last_out = max(outs, key=lambda d: d.time)
+        ins = [d for d in ds if d.entry != _DEAL_ENTRY_OUT]
+        hours = None
+        if ins:
+            opened = min(d.time for d in ins)
+            hours = max(0.0, (last_out.time - opened) / 3600.0)
         trades.append(
             TradeRow(
                 position_id=pos_id,
@@ -109,6 +117,7 @@ def build_trades(
                 strategy=strategy_of(last_out.magic, magic_index),
                 close_time=datetime.fromtimestamp(last_out.time, tz=tz),
                 net=net,
+                hours_held=hours,
             )
         )
     trades.sort(key=lambda t: t.close_time)

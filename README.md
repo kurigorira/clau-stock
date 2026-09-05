@@ -470,6 +470,54 @@ visible. Deal timestamps come from the broker's server clock, so a trade
 closed within a few hours of a JST month boundary can land in the
 neighboring month — noise at monthly granularity.
 
+## Payoff audit — why a validated strategy loses live
+
+`scripts/payoff_audit.py` answers the question a losing month raises: is the
+win RATE off, or is the PAYOFF (average win vs average loss) off? They call
+for different fixes — a wrong win rate points at the entry and the regime
+filter, a wrong payoff points at the exit, the stop distance, or costs.
+
+```bash
+python scripts/payoff_audit.py --account 1 --days 30 config/us_fleet/*.yaml
+python scripts/payoff_audit.py --account 4 --days 30 config/us_fleet_a4/*.yaml
+python scripts/payoff_audit.py --account 1 --days 30 --no-backtest config/us_fleet/*.yaml
+```
+
+It puts the live shape beside the backtest shape over the same window — win
+rate, average win, average loss, payoff ratio, expectancy, median holding
+time — and prints the two break-even identities that make the gap legible:
+the payoff ratio this win rate needs (`(1-w)/w`), and the win rate this
+payoff needs (`1/(1+R)`). PnL units cancel in every one of those figures, so
+a backtest in price units compares cleanly with live results in JPY.
+
+The check that does not depend on sample size: if the live payoff ratio is
+below `(1 - backtest win rate) / backtest win rate`, then **even restoring
+the backtested win rate would still lose** — the exit, not the entry, is
+what broke. The backtest exit-reason table underneath separates stop-outs
+from signal exits, so a signal exit that fires sooner live than on paper
+shows up as a short median hold against a long `channel` hold.
+
+The backtest side needs `data/<symbol>_h1.csv` per symbol
+(`scripts/dump_history.py` writes them); symbols without one are skipped and
+counted rather than silently dropped. `--no-backtest` gives the live half
+alone.
+
+## Is the A/B actually an A/B?
+
+`scripts/diag_fleet_diff.py` diffs two fleets' settings symbol by symbol and
+reports what differs — and what does not differ when it was supposed to. Two
+fleets meant to isolate one gate should differ by exactly that gate; if they
+differ by nothing, the experiment is measuring noise against noise.
+
+```bash
+python scripts/diag_fleet_diff.py --expect stoch.use \
+    config/us_fleet/*.yaml -- config/us_fleet_a2/*.yaml
+```
+
+Separate the two fleets with `--`. It exits non-zero when an `--expect` key
+fails to differ on every shared symbol, so it can gate a launch. YAML only:
+no MT5 connection, no credentials, works with the market shut.
+
 ## Live-vs-backtest scorecard
 
 `scripts/scorecard.py` answers the most important question once real trades
