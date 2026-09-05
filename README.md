@@ -439,6 +439,23 @@ python scripts/monthly_report.py --markdown         # -> reports/monthly.md
 python scripts/monthly_report.py --email            # send via GMAIL_* env vars
 ```
 
+`--html [PATH]` writes a standalone HTML page (default `docs/index.html`,
+plus a `.nojekyll` beside it) — the file GitHub Pages serves. Everything the
+page states is derived from the embedded figures: the headline, the
+per-strategy totals, each account's role (the dominant strategy of its last
+active month), and the automatic checks (strategies negative overall, two
+accounts closing an identical number of trades in the same month — an A/B
+that is not differentiating — and a thin latest month). Nothing is
+hand-written commentary, because the page is regenerated every month and
+stale prose would outlive the numbers it described.
+
+**Publishing it is publishing your P&L.** A GitHub Pages site is readable by
+anyone who has the URL — on a free plan Pages requires the repository to be
+public as well, which would publish the code and the whole commit history
+with it. To turn it on: Settings → Pages → Source "Deploy from a branch",
+branch `main`, folder `/docs`. To turn it off again, set Source to "None" —
+but anything already fetched or indexed is out of your hands.
+
 `--markdown [PATH]` writes the same figures as a Markdown report meant to be
 committed (`reports/` is tracked; `logs/` is not). Account numbers are masked
 to their last three digits there — a login plus the server name identifies the

@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from gold_trader import monthly, report  # noqa: E402
+from gold_trader import htmlreport, monthly, report  # noqa: E402
 from gold_trader.monthly import JST, AccountMonthly  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 from gold_trader.notify import _send_via_gmail  # noqa: E402
@@ -88,6 +88,16 @@ def main() -> None:
         help="write full account numbers into the Markdown report instead of "
         "masking them. A login plus the server name identifies the account to "
         "anyone holding the password; leave this off for anything you publish",
+    )
+    parser.add_argument(
+        "--html",
+        nargs="?",
+        const="docs/index.html",
+        default=None,
+        metavar="PATH",
+        help="also write a standalone HTML report (default path docs/index.html, "
+        "which is what GitHub Pages serves). Account logins are masked - see "
+        "--show-logins. Anything served by Pages is readable by anyone with the URL",
     )
     parser.add_argument("--email", action="store_true", help="send the report via GMAIL_* env vars")
     args = parser.parse_args()
@@ -150,6 +160,24 @@ def main() -> None:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(md + "\n", encoding="utf-8")
         print(f"markdown written: {out}")
+
+    if args.html:
+        page = htmlreport.render_html(
+            reports, generated_at, mask_logins=not args.show_logins
+        )
+        out = Path(args.html)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(page, encoding="utf-8")
+        # Pages runs Jekyll by default, which skips files starting with "_"
+        # and can rewrite what it does serve; .nojekyll turns that off.
+        (out.parent / ".nojekyll").write_text("", encoding="utf-8")
+        print(f"html written: {out}")
+        if args.show_logins:
+            print(
+                "  WARNING: --show-logins put full account numbers in a file "
+                "GitHub Pages serves publicly",
+                file=sys.stderr,
+            )
 
     if args.email:
         ok = [r for r in reports if r.error is None]
