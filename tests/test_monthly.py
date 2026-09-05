@@ -130,11 +130,11 @@ def test_monthly_stats_empty():
 def test_format_and_csv_smoke():
     months = monthly_stats(_two_month_trades(), [], balance_now=1000.0)
     reports = [
-        AccountMonthly(account="1", login=781431, balance=1000.0, months=months),
+        AccountMonthly(account="1", login=100001, balance=1000.0, months=months),
         AccountMonthly(account="9", error="missing env var 'MT5_LOGIN_9'"),
     ]
     body = format_monthly_report(reports, "2026-09-03 09:00 JST")
-    assert "Account 1 (781431)" in body
+    assert "Account 1 (100001)" in body
     assert "TOTAL" in body and "by strategy:" in body
     assert "ERROR: missing env var" in body
 
@@ -147,23 +147,23 @@ def test_format_and_csv_smoke():
 # --- markdown (published to the repo) ---------------------------------------
 
 def test_mask_login_keeps_last_three_digits():
-    assert mask_login(781431) == "***431"
+    assert mask_login(100001) == "***001"
     assert mask_login(12) == "***"
 
 
 def _md_reports():
     months = monthly_stats(_two_month_trades(), [], balance_now=1000.0)
     return [
-        AccountMonthly(account="1", login=781431, balance=1000.0, months=months),
+        AccountMonthly(account="1", login=100001, balance=1000.0, months=months),
         AccountMonthly(account="9", error="missing env var 'MT5_LOGIN_9'"),
     ]
 
 
 def test_markdown_masks_logins_by_default():
     md = format_monthly_markdown(_md_reports(), "2026-09-04 21:00 JST")
-    assert "***431" in md
-    assert "781431" not in md  # the full account number never reaches the file
-    assert "## Account 1 (***431)" in md
+    assert "***001" in md
+    assert "100001" not in md  # the full account number never reaches the file
+    assert "## Account 1 (***001)" in md
     assert "| 2026-06 | 2 | 50.0 |" in md
     assert "**total**" in md
     assert "Not reported: missing env var" in md
@@ -174,13 +174,13 @@ def test_markdown_can_opt_into_full_logins():
     md = format_monthly_markdown(
         _md_reports(), "2026-09-04 21:00 JST", mask_logins=False
     )
-    assert "## Account 1 (781431)" in md
+    assert "## Account 1 (100001)" in md
 
 
 def test_markdown_summary_totals_match_month_rows():
     md = format_monthly_markdown(_md_reports(), "x")
     # 3 trades total (2 in June, 0 in July, 1 in August), 2 of them winners
-    summary = [ln for ln in md.splitlines() if ln.startswith("| 1 (***431) |")]
+    summary = [ln for ln in md.splitlines() if ln.startswith("| 1 (***001) |")]
     assert len(summary) == 1
     cells = [c.strip() for c in summary[0].strip("|").split("|")]
     assert cells[1:4] == ["3", "3", "66.7"]  # months, trades, win%
