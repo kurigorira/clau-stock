@@ -1,0 +1,29 @@
+# USDCAD fibonacci retrace preset (fx, account 1).
+# strategy: donchian — the 6-month backtest (scripts/backtest_all.py) showed
+# breakout beating the fib pullback on this symbol. File keeps its fib_ name
+# so start.bat and the magic_number stay stable.
+# Inherits all other defaults from src/gold_trader/config.py.
+symbol: USDCAD
+timeframe: H1
+strategy: donchian
+
+risk:
+  per_trade_pct: 0.3
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  atr_pct_min: 0.0003
+  atr_pct_max: 0.01
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260704
+  deviation_points: 10
+  comment: "fib_usdcad"
