@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -39,14 +40,18 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
 
 def _csv_for(symbol: str) -> Path | None:
-    """data/<slug>_h1.csv for a broker symbol name, if it was dumped."""
-    slug = "".join(c for c in symbol.lower() if c.isalnum())
-    for p in (DATA_DIR / f"{slug}_h1.csv", DATA_DIR / f"{symbol.lower()}_h1.csv"):
+    """data/<name>_h1.csv for a broker symbol, using dump_history's naming.
+
+    Matching is exact on the sanitised name (dump_history's `_safe_name`) or
+    on the alphanumeric reduction of it. Deliberately no fuzzy prefix match:
+    silently backtesting a different instrument than the one that traded
+    would corrupt the comparison this whole script exists to make.
+    """
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", symbol.lower())
+    alnum = "".join(c for c in symbol.lower() if c.isalnum())
+    for name in (safe, alnum):
+        p = DATA_DIR / f"{name}_h1.csv"
         if p.exists():
-            return p
-    # fall back to a loose match so BTCUSD / btc_usd style names still hit
-    for p in DATA_DIR.glob("*_h1.csv"):
-        if "".join(c for c in p.stem.lower() if c.isalnum()).startswith(slug):
             return p
     return None
 
@@ -61,38 +66,54 @@ def _live_trades(creds: MT5Credentials, days: int, magic_index):
     return [t for t in trades if t.close_time.timestamp() >= since.timestamp()]
 
 
+MIN_BARS = 300  # indicator warm-up plus room for the window itself
+
+
 def _backtest_shape(cfgs: list[Config], days: int, slippage_bp: float):
-    """Pool the backtest trades of every fleet symbol over the recent window."""
+    """Pool the backtest trades of every fleet symbol over the recent window.
+
+    The backtest runs on the FULL dumped history and only the trades that
+    closed inside the window are counted. Slicing to the window first would
+    spend its opening bars warming up the indicators, which on a 30-day
+    window of session-limited US-stock bars is most of the sample.
+    """
     pnls: list[float] = []
     hours: list[float] = []
-    used, missing = 0, []
-    reasons: dict[str, int] = {}
+    used = 0
+    no_csv: list[str] = []
+    too_short: list[str] = []
+    reasons: dict[str, dict] = {}
     for cfg in cfgs:
         csv = _csv_for(cfg.symbol)
         if csv is None:
-            missing.append(cfg.symbol)
+            no_csv.append(cfg.symbol)
             continue
         df = load_csv(csv)
-        cutoff = df.index.max() - timedelta(days=days)
-        window = df[df.index >= cutoff]
-        if len(window) < 200:            # not enough bars for indicators + trades
-            missing.append(cfg.symbol)
+        if len(df) < MIN_BARS:
+            too_short.append(f"{cfg.symbol}({len(df)})")
             continue
-        slip = float(window["close"].median()) * slippage_bp / 10_000.0
-        res = run_backtest(window, cfg, slippage_price=slip)
+        cutoff = df.index.max() - timedelta(days=days)
+        slip = float(df["close"].median()) * slippage_bp / 10_000.0
+        res = run_backtest(df, cfg, slippage_price=slip)
         used += 1
         for t in res["trades"]:
+            if t.exit_time < cutoff:
+                continue
             pnls.append(t.pnl_price)
-            hours.append(float(t.bars_held))   # H1 bars -> hours
-        # exit_reason_breakdown returns per-reason aggregates, not counts:
-        # {'sl': {'n':.., 'pnl':.., 'win_rate':.., 'avg_bars_held':..}, ...}
-        for k, agg in (res.get("exit_reasons") or {}).items():
-            slot = reasons.setdefault(k, {"n": 0, "pnl": 0.0, "wins": 0, "bars": 0.0})
-            slot["n"] += agg["n"]
-            slot["pnl"] += agg["pnl"]
-            slot["wins"] += round(agg["win_rate"] * agg["n"])
-            slot["bars"] += agg["avg_bars_held"] * agg["n"]
-    return payoff.stats_from_pnls(pnls, hours), used, missing, reasons
+            # wall-clock hours, matching how live holding time is measured.
+            # bars_held would undercount: a US-stock CSV has no overnight
+            # bars, so 12 bars can span two calendar days.
+            hours.append((t.exit_time - t.entry_time).total_seconds() / 3600.0)
+            # tallied here rather than from res["exit_reasons"], which covers
+            # the whole file - these must describe the same window as the stats
+            slot = reasons.setdefault(
+                t.reason, {"n": 0, "pnl": 0.0, "wins": 0, "hours": 0.0}
+            )
+            slot["n"] += 1
+            slot["pnl"] += t.pnl_price
+            slot["wins"] += 1 if t.pnl_price > 0 else 0
+            slot["hours"] += (t.exit_time - t.entry_time).total_seconds() / 3600.0
+    return payoff.stats_from_pnls(pnls, hours), used, no_csv, too_short, reasons
 
 
 def main() -> None:
@@ -146,22 +167,34 @@ def main() -> None:
         by_strategy.setdefault(t.strategy, []).append(t)
 
     fleet_strategy = cfgs[0].strategy
-    back, used, missing, reasons = (None, 0, [], {})
+    back, used, no_csv, too_short, reasons = (None, 0, [], [], {})
     if not args.no_backtest:
-        back, used, missing, reasons = _backtest_shape(cfgs, args.days, args.slippage_bp)
+        back, used, no_csv, too_short, reasons = _backtest_shape(
+            cfgs, args.days, args.slippage_bp
+        )
 
     print(f"payoff audit - account {args.account} - last {args.days} days")
     print(f"fleet: {len(cfgs)} configs, strategy '{fleet_strategy}', "
           f"backtest cost {args.slippage_bp:g}bp/side")
+    coverage = 100.0 * used / len(cfgs)
     if not args.no_backtest:
-        print(f"backtest ran on {used}/{len(cfgs)} symbols"
-              + (f"; no usable data/*_h1.csv for {len(missing)} "
-                 f"({', '.join(missing[:8])}{' ...' if len(missing) > 8 else ''})"
-                 if missing else ""))
+        print(f"backtest ran on {used}/{len(cfgs)} symbols ({coverage:.0f}% coverage)")
+        if no_csv:
+            print(f"  no data/*_h1.csv: {len(no_csv)} "
+                  f"({', '.join(no_csv[:8])}{' ...' if len(no_csv) > 8 else ''})")
+        if too_short:
+            print(f"  CSV shorter than {MIN_BARS} bars: {len(too_short)} "
+                  f"({', '.join(too_short[:8])}{' ...' if len(too_short) > 8 else ''})")
         if used == 0:
             print("  -> nothing to compare against. Dump history first:")
             print("     python scripts/dump_history.py --account "
-                  f"{args.account} {' '.join(args.configs)}")
+                  f"{args.account} --months 6 {' '.join(args.configs)}")
+        elif coverage < 60.0:
+            print("  -> WARNING: the backtest column is built from a minority of "
+                  "the fleet and is NOT a valid baseline for the live column.")
+            print("     Dump the missing symbols before drawing any conclusion:")
+            print("     python scripts/dump_history.py --account "
+                  f"{args.account} --months 6 {' '.join(args.configs)}")
     print()
 
     for name in sorted(by_strategy, key=lambda k: -len(by_strategy[k])):
@@ -170,8 +203,13 @@ def main() -> None:
             [t.net for t in rows],
             [t.hours_held for t in rows if t.hours_held is not None],
         )
-        # only the fleet's own strategy has a backtest to compare against
-        pair = back if (back and back.n and name == fleet_strategy) else None
+        # only the fleet's own strategy has a backtest to compare against, and
+        # only when enough of the fleet actually produced one
+        pair = (
+            back
+            if (back and back.n and name == fleet_strategy and coverage >= 60.0)
+            else None
+        )
         print(payoff.format_block(f"{name} (account {args.account})", live, pair))
         print()
 
@@ -184,7 +222,7 @@ def main() -> None:
             n = v["n"] or 1
             print(f"  {k:<10} {v['n']:>8} {100.0 * v['n'] / total:>6.0f}% "
                   f"{100.0 * v['wins'] / n:>6.1f}% {v['pnl'] / n:>12.4f} "
-                  f"{v['bars'] / n:>9.1f}h")
+                  f"{v['hours'] / n:>9.1f}h")
         print("  'sl' = stopped out, 'channel' = the strategy's own exit signal, "
               "'tp' = take profit.")
         print("  If the backtest's winners come from long 'channel' holds but "
