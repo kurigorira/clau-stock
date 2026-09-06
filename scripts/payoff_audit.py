@@ -56,6 +56,22 @@ def _csv_for(symbol: str) -> Path | None:
     return None
 
 
+def _print_reason_table(title: str, reasons: dict, decimals: int = 2) -> None:
+    """Shared renderer so the live and backtest mixes line up column for column."""
+    rows = {k: v for k, v in reasons.items() if v["n"]}
+    if not rows:
+        return
+    total = sum(v["n"] for v in rows.values()) or 1
+    print(title)
+    print(f"  {'reason':<10} {'trades':>8} {'share':>7} {'win%':>7} "
+          f"{'avg pnl':>14} {'avg hold':>10}")
+    for k, v in sorted(rows.items(), key=lambda kv: -kv[1]["n"]):
+        n = v["n"] or 1
+        print(f"  {k:<10} {v['n']:>8} {100.0 * v['n'] / total:>6.0f}% "
+              f"{100.0 * v['wins'] / n:>6.1f}% {v['pnl'] / n:>14,.{decimals}f} "
+              f"{v['hours'] / n:>9.1f}h")
+
+
 def _live_trades(creds: MT5Credentials, days: int, magic_index):
     since = datetime.now(timezone.utc) - timedelta(days=days)
     with connect(creds) as mt5:
@@ -211,22 +227,29 @@ def main() -> None:
             else None
         )
         print(payoff.format_block(f"{name} (account {args.account})", live, pair))
+        _print_reason_table(
+            f"  live exits, by reason ({name}):",
+            {
+                r: {
+                    "n": len([t for t in rows if t.exit_reason == r]),
+                    "pnl": sum(t.net for t in rows if t.exit_reason == r),
+                    "wins": len([t for t in rows if t.exit_reason == r and t.net > 0]),
+                    "hours": sum(
+                        t.hours_held or 0.0 for t in rows if t.exit_reason == r
+                    ),
+                }
+                for r in sorted({t.exit_reason for t in rows})
+            },
+        )
         print()
 
     if reasons:
-        total = sum(v["n"] for v in reasons.values()) or 1
-        print("backtest exits, by reason:")
-        print(f"  {'reason':<10} {'trades':>8} {'share':>7} {'win%':>7} "
-              f"{'avg pnl':>12} {'avg hold':>10}")
-        for k, v in sorted(reasons.items(), key=lambda kv: -kv[1]["n"]):
-            n = v["n"] or 1
-            print(f"  {k:<10} {v['n']:>8} {100.0 * v['n'] / total:>6.0f}% "
-                  f"{100.0 * v['wins'] / n:>6.1f}% {v['pnl'] / n:>12.4f} "
-                  f"{v['hours'] / n:>9.1f}h")
-        print("  'sl' = stopped out, 'channel' = the strategy's own exit signal, "
-              "'tp' = take profit.")
-        print("  If the backtest's winners come from long 'channel' holds but "
-              "live holds are short, the exit is firing earlier live than on paper.")
+        _print_reason_table("backtest exits, by reason:", reasons, decimals=4)
+        print("  'sl' = stopped out, 'channel'/'expert' = the strategy's own exit "
+              "signal, 'tp' = take profit.")
+        print("  Compare the SHARE of 'sl' above with the live table: a live stop "
+              "rate well over the backtest's is what turns a backtested win rate "
+              "into a live one half its size.")
 
 
 if __name__ == "__main__":

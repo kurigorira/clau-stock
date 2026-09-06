@@ -31,6 +31,30 @@ JST = timezone(timedelta(hours=9))
 
 _DEAL_ENTRY_OUT = 1  # mt5.DEAL_ENTRY_OUT
 
+# mt5.DEAL_REASON_*: what closed the position. Comparing the live mix with
+# the backtest's exit reasons is what separates "the stop is being hit more
+# often than on paper" from "the strategy's own exit fires differently".
+_DEAL_REASONS = {
+    0: "manual",    # CLIENT
+    1: "manual",    # MOBILE
+    2: "manual",    # WEB
+    3: "expert",    # EXPERT - the bot's own exit signal
+    4: "sl",        # STOP LOSS
+    5: "tp",        # TAKE PROFIT
+    6: "stopout",   # margin stop out
+}
+
+
+def deal_exit_reason(deal: Any) -> str:
+    """Closing deal -> exit reason label; 'unknown' when the build omits it."""
+    code = getattr(deal, "reason", None)
+    if code is None:
+        return "unknown"
+    try:
+        return _DEAL_REASONS.get(int(code), "unknown")
+    except (TypeError, ValueError):
+        return "unknown"
+
 
 @dataclass
 class TradeRow:
@@ -43,6 +67,9 @@ class TradeRow:
     # None when the opening deal falls outside the queried window, so the
     # position's real entry time is unknown rather than zero.
     hours_held: float | None = None
+    # What actually closed the position, from the closing deal's reason code.
+    # "sl" | "tp" | "expert" | "manual" | "stopout" | "unknown"
+    exit_reason: str = "unknown"
 
 
 @dataclass
@@ -118,6 +145,7 @@ def build_trades(
                 close_time=datetime.fromtimestamp(last_out.time, tz=tz),
                 net=net,
                 hours_held=hours,
+                exit_reason=deal_exit_reason(last_out),
             )
         )
     trades.sort(key=lambda t: t.close_time)

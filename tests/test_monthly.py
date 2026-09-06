@@ -185,3 +185,38 @@ def test_markdown_summary_totals_match_month_rows():
     cells = [c.strip() for c in summary[0].strip("|").split("|")]
     assert cells[1:4] == ["3", "3", "66.7"]  # months, trades, win%
     assert cells[5] == "+120"                # net = 100 - 40 + 60
+
+
+# --- live exit reasons ------------------------------------------------------
+
+def _deal_r(pos, entry, t, profit, reason=None, magic=123):
+    ns = SimpleNamespace(position_id=pos, symbol="AAPL", entry=entry, time=int(t),
+                         profit=profit, commission=0.0, swap=0.0, magic=magic)
+    if reason is not None:
+        ns.reason = reason
+    return ns
+
+
+def test_exit_reason_and_hold_from_closing_deal():
+    t0 = _unix(2026, 9, 1)
+    deals = [
+        _deal_r(1, IN, t0, 0.0, 3), _deal_r(1, OUT, t0 + 3600 * 6, -100.0, 4),
+        _deal_r(2, IN, t0, 0.0, 3), _deal_r(2, OUT, t0 + 3600 * 40, 250.0, 3),
+        _deal_r(3, IN, t0, 0.0, 3), _deal_r(3, OUT, t0 + 3600 * 2, -30.0, 0),
+        _deal_r(4, IN, t0, 0.0), _deal_r(4, OUT, t0 + 3600 * 5, 10.0),
+    ]
+    trades, _ = build_trades(deals, _index())
+    by_id = {t.position_id: t for t in trades}
+    assert by_id[1].exit_reason == "sl" and by_id[1].hours_held == 6.0
+    assert by_id[2].exit_reason == "expert" and by_id[2].hours_held == 40.0
+    assert by_id[3].exit_reason == "manual"
+    # a terminal build without a reason field must not guess
+    assert by_id[4].exit_reason == "unknown"
+
+
+def test_hours_held_is_none_without_an_opening_deal():
+    # the entry deal fell outside the queried window
+    deals = [_deal_r(9, OUT, _unix(2026, 9, 2), 5.0, 3)]
+    trades, _ = build_trades(deals, _index())
+    assert trades[0].hours_held is None
+    assert trades[0].exit_reason == "expert"
