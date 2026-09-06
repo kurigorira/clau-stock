@@ -72,6 +72,45 @@ def _print_reason_table(title: str, reasons: dict, decimals: int = 2) -> None:
               f"{v['hours'] / n:>9.1f}h")
 
 
+_DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _print_stop_timing(rows, cfg: Config) -> None:
+    """When do live stops actually fire, relative to the trading session?
+
+    The backtest can only see bars inside the session it was dumped for and
+    fills every stop at exactly the stop price. A stop that fires outside
+    that window - overnight, or on the next open through a gap - is invisible
+    to it, which would show up live as both a higher stop rate and stops that
+    cost more than the risk they were sized for.
+    """
+    stops = [t for t in rows if t.exit_reason == "sl" and t.close_time]
+    if not stops:
+        return
+    start, end = cfg.session.start_utc, cfg.session.end_utc
+    days = set(cfg.session.trade_days)
+
+    inside, outside = [], []
+    for t in stops:
+        u = t.close_time.astimezone(timezone.utc)
+        in_day = _DAY_NAMES[u.weekday()] in days
+        in_hours = start <= u.time() <= end
+        (inside if (in_day and in_hours) else outside).append(u)
+
+    print(f"  live stop-outs vs the session window "
+          f"({start.strftime('%H:%M')}-{end.strftime('%H:%M')} UTC, "
+          f"{'/'.join(sorted(days, key=_DAY_NAMES.index))}):")
+    n = len(stops)
+    print(f"    inside the window : {len(inside):>3} ({100.0 * len(inside) / n:.0f}%)")
+    print(f"    OUTSIDE the window: {len(outside):>3} "
+          f"({100.0 * len(outside) / n:.0f}%)")
+    if outside:
+        hours = sorted({u.strftime('%H:00') for u in outside})
+        print(f"    outside-window hours (UTC): {', '.join(hours)}")
+        print("    -> these fired when the backtest had no bars at all, so no "
+              "amount of re-validating on this data could have predicted them")
+
+
 def _live_trades(creds: MT5Credentials, days: int, magic_index):
     since = datetime.now(timezone.utc) - timedelta(days=days)
     with connect(creds) as mt5:
@@ -241,6 +280,8 @@ def main() -> None:
                 for r in sorted({t.exit_reason for t in rows})
             },
         )
+        if name == fleet_strategy:
+            _print_stop_timing(rows, cfgs[0])
         print()
 
     if reasons:
