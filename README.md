@@ -502,6 +502,40 @@ The backtest side needs `data/<symbol>_h1.csv` per symbol
 counted rather than silently dropped. `--no-backtest` gives the live half
 alone.
 
+## Signal reconciliation — did the bot take the backtest's trades?
+
+`scripts/reconcile_signals.py` answers the question the payoff audit cannot
+settle at a small sample. Over the same window, on the same symbols, the
+backtest names every entry it would have made and the account names every
+entry it did make; matching them is a yes/no question about the
+implementation, and the answer is as good at 47 trades as at 4,700.
+
+```bash
+python scripts/reconcile_signals.py --account 1 --days 30 config/us_fleet/*.yaml
+python scripts/reconcile_signals.py --account 4 --days 30 config/us_fleet_a4/*.yaml
+```
+
+The backtest stamps a signal with the H1 bar it was evaluated on; the live
+bot only sees that bar once it closes, so the fill lands in the next bar (or
+the one after, when the first attempt is rejected and retried). Matching
+allows exactly that offset — a fill inside the signal's own bar is *not* a
+match, since accepting one would hide a look-ahead bug.
+
+Reading the verdict:
+
+- **live-only entries** — the bot entered where the backtest saw nothing. A
+  bug at any count: the bot cannot see anything the backtest cannot.
+- **wholesale disagreement in both directions** — the live bot is not running
+  the strategy that was validated.
+- **backtest-only skips, no live-only** — the implementation agrees; the bot
+  passed on signals for reasons that exist only live (the position cap, the
+  stop-distance guard, session hours, downtime). Check those account for the
+  number before reading anything into performance.
+
+The window starts at the first live entry unless `--since` says otherwise, so
+a fleet launched partway through the period is not blamed for signals that
+fired before it existed.
+
 ## Is the A/B actually an A/B?
 
 `scripts/diag_fleet_diff.py` diffs two fleets' settings symbol by symbol and
