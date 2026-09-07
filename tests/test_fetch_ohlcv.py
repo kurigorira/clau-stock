@@ -72,11 +72,19 @@ def test_visible_symbol_is_not_reselected():
     assert fake.rate_calls == 1
 
 
-def test_unknown_symbol_raises_without_selecting():
+def test_unknown_symbol_raises_a_distinct_permanent_error():
+    # a symbol this account does not carry can never work: callers must be
+    # able to tell it apart from a transient miss and drop it
     fake = FakeMT5(known=False, visible=False)
-    with pytest.raises(RuntimeError, match="no rates for EA M1"):
+    with pytest.raises(mt5_client.UnknownSymbolError, match="not in this terminal"):
         _fetch(fake)
     assert fake.select_calls == []          # symbol_info None -> nothing to select
+    assert fake.rate_calls == 1             # and no pointless retry
+
+
+def test_unknown_symbol_error_is_still_a_runtimeerror():
+    # existing broad handlers must keep catching it
+    assert issubclass(mt5_client.UnknownSymbolError, RuntimeError)
 
 
 def test_still_empty_after_select_raises_once():

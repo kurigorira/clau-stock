@@ -28,7 +28,12 @@ from gold_trader.cli_util import expand_paths  # noqa: E402
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.executor import Executor  # noqa: E402
 from gold_trader.logger import setup_logging  # noqa: E402
-from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
+from gold_trader.mt5_client import (  # noqa: E402
+    MT5Credentials,
+    UnknownSymbolError,
+    connect,
+    ensure_symbol_visible,
+)
 
 
 def main() -> None:
@@ -77,6 +82,22 @@ def main() -> None:
         sys.exit(2)
 
     with connect(creds):
+        # Check the catalogue before starting rather than discovering a bad
+        # `symbol:` one poll at a time. ensure_symbol_visible also puts each
+        # symbol in Market Watch, which history calls need anyway.
+        live_cfgs, unknown = [], []
+        for cfg in configs:
+            (live_cfgs if ensure_symbol_visible(cfg.symbol) else unknown).append(cfg)
+        if unknown:
+            log.error(
+                f"{len(unknown)} symbol(s) not offered on this account, skipping: "
+                + ", ".join(c.symbol for c in unknown)
+            )
+        if not live_cfgs:
+            log.error("none of the configured symbols exist on this account, exiting")
+            return
+        configs = live_cfgs
+
         executors = [
             Executor(cfg, log.getChild(cfg.symbol), account=args.account) for cfg in configs
         ]
@@ -88,11 +109,24 @@ def main() -> None:
             )
         poll = min(c.execution.poll_seconds for c in configs)
         while True:
-            for ex in executors:
+            for ex in list(executors):
                 try:
                     ex.step()
+                except UnknownSymbolError as exc:
+                    # Permanent: this account cannot trade the symbol. Retrying
+                    # every poll would only bury the real log under tracebacks.
+                    executors.remove(ex)
+                    log.error(
+                        f"dropping {ex.cfg.symbol}: {exc}. "
+                        f"{len(executors)} executors still running. Fix the "
+                        f"`symbol:` field against MT5 Market Watch, or "
+                        f"regenerate the fleet, then restart."
+                    )
                 except Exception as exc:  # noqa: BLE001
                     log.exception(f"step failed for {ex.cfg.symbol}: {exc}")
+            if not executors:
+                log.error("no executors left to run, exiting")
+                return
             time_mod.sleep(poll)
 
 

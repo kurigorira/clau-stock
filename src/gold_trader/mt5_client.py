@@ -38,6 +38,15 @@ def _mt5():
     return mt5
 
 
+class UnknownSymbolError(RuntimeError):
+    """This account's terminal does not carry the symbol at all.
+
+    Unlike a closed venue or an unselected symbol, no amount of retrying
+    fixes it — the broker does not offer this instrument on this account, or
+    the config names it differently than the terminal does. Callers drop the
+    symbol instead of raising once per poll forever."""
+
+
 class MarketClosedError(RuntimeError):
     """The venue rejected the order because it is not trading right now.
 
@@ -128,9 +137,14 @@ def fetch_ohlcv(symbol: str, tf_name: str, n_bars: int) -> pd.DataFrame:
     mt5 = _mt5()
     rates = mt5.copy_rates_from_pos(symbol, timeframe(tf_name), 0, n_bars)
     if rates is None or len(rates) == 0:
-        # Most often the symbol simply is not in Market Watch yet (a fleet
-        # symbol whose executor has not run, or an alert-only symbol).
-        # Select it and retry once before giving up.
+        # Two very different causes look alike here. A symbol this account
+        # simply does not carry can never work and must be dropped; one the
+        # terminal knows but has not put in Market Watch works after a select.
+        if mt5.symbol_info(symbol) is None:
+            raise UnknownSymbolError(
+                f"{symbol} is not in this terminal's symbol list: "
+                f"{mt5.last_error()}"
+            )
         if ensure_symbol_visible(symbol):
             rates = mt5.copy_rates_from_pos(symbol, timeframe(tf_name), 0, n_bars)
     if rates is None or len(rates) == 0:
