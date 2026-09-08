@@ -56,6 +56,29 @@ if defined MT5_PATH_3 (
 ) else (
     echo [start.bat] NOTE: MT5_PATH_3 not set - LIVE terminal will not open
 )
+REM ==== 2b. Open any MT5 shortcut sitting on the Desktop ====
+REM Terminals not named in .env - a manually managed account, say - are
+REM usually opened from a Desktop shortcut. Matching on the shortcut NAME
+REM (mt5 / metatrader / vantage) rather than a fixed filename means a new
+REM one is picked up without editing this file. Re-launching an install MT5
+REM already has running is safe: it focuses the existing window instead of
+REM starting a second copy. Set SKIP_DESKTOP_SHORTCUTS=1 to turn this off.
+if defined SKIP_DESKTOP_SHORTCUTS (
+    echo [start.bat] SKIP_DESKTOP_SHORTCUTS set - not opening Desktop shortcuts
+) else (
+    for %%d in ("%USERPROFILE%\Desktop" "%OneDrive%\Desktop") do (
+        if exist "%%~d\" (
+            for %%f in ("%%~d\*.lnk") do (
+                echo "%%~nf"| findstr /i "mt5 metatrader vantage" >nul
+                if not errorlevel 1 (
+                    echo [start.bat] opening Desktop shortcut: "%%~nxf"
+                    start "" "%%~f"
+                )
+            )
+        )
+    )
+)
+
 echo [start.bat] waiting 30 seconds for the terminals to load and auto-login...
 timeout /t 30 /nobreak >nul
 
