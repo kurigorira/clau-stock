@@ -4,7 +4,7 @@ REM   account 1 (demo) - macd base US-stock fleet        config\us_fleet\*.yaml
 REM   account 2 (demo) - macd + stoch 80/20 fleet        config\us_fleet_a2\*.yaml
 REM   account 4 (demo) - bollrci mean-reversion fleet    config\us_fleet_a4\*.yaml
 REM   account 3 (LIVE) - manual management ONLY: the terminal opens, no bot.
-REM   any other MT5_PATH_<n> - terminal opens, no bot (manual accounts).
+REM   any other MT5_PATH_<n> / MT5_OPEN_<n> - terminal opens, no bot.
 REM
 REM Accounts 1 vs 2 are a live A/B: identical 100 spread-selected symbols,
 REM the only difference is the stoch 80/20 gate (OOS test +467 vs +276).
@@ -33,11 +33,12 @@ if not exist ".env" (
 REM Suffixes 1-9 cover every account; unset ones are skipped, so a new
 REM account needs only its MT5_PATH_<n> line in .env - nothing to edit here.
 for %%n in (1 2 3 4 5 6 7 8 9) do set "MT5_PATH_%%n="
-for %%n in (1 2 3 4 5 6 7 8 9) do set "MT5_SHORTCUT_%%n="
+for %%n in (1 2 3 4 5 6 7 8 9) do set "MT5_OPEN_%%n="
 for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
     for %%n in (1 2 3 4 5 6 7 8 9) do (
         if /I "%%a"=="MT5_PATH_%%n" set "MT5_PATH_%%n=%%~b"
-        if /I "%%a"=="MT5_SHORTCUT_%%n" set "MT5_SHORTCUT_%%n=%%~b"
+        if /I "%%a"=="MT5_OPEN_%%n" set "MT5_OPEN_%%n=%%~b"
+        if /I "%%a"=="MT5_SHORTCUT_%%n" set "MT5_OPEN_%%n=%%~b"
     )
 )
 REM The three bot accounts must be present; the rest are optional.
@@ -49,14 +50,17 @@ REM ==== 2. Launch one terminal per configured account ====
 REM Every path is started AT MOST ONCE, and one shared by two entries opens a
 REM single time - a /portable terminal does not dedupe itself, so starting it
 REM repeatedly just piles up windows.
-REM   MT5_PATH_<n>      an exe, for an account the bots or reports connect to
-REM   MT5_SHORTCUT_<n>  a .lnk, for a terminal that must keep its shortcut's
-REM                     arguments (/portable decides which data folder, and
-REM                     therefore which account, the terminal opens)
+REM   MT5_PATH_<n>   account <n>'s terminal. Opened here, and ALSO the
+REM                  account the bots and the reports connect to under that
+REM                  suffix - naming a terminal here puts it in the reports.
+REM   MT5_OPEN_<n>   just open this, nothing else: no account, no bot, no
+REM                  report. Takes an exe or a .lnk; a shortcut keeps its
+REM                  target's arguments, which is what /portable needs.
+REM                  (MT5_SHORTCUT_<n> still works as an older spelling.)
 REM Nothing is scanned: only what .env names is opened.
 set "LAUNCHED_PATHS="
 for %%n in (1 2 3 4 5 6 7 8 9) do call :launch_one "MT5_PATH_%%n" "account-%%n terminal"
-for %%n in (1 2 3 4 5 6 7 8 9) do call :launch_one "MT5_SHORTCUT_%%n" "shortcut %%n"
+for %%n in (1 2 3 4 5 6 7 8 9) do call :launch_one "MT5_OPEN_%%n" "extra terminal %%n"
 
 echo [start.bat] waiting 30 seconds for the terminals to load and auto-login...
 timeout /t 30 /nobreak >nul
