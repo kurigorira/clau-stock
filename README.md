@@ -456,6 +456,27 @@ with it. To turn it on: Settings → Pages → Source "Deploy from a branch",
 branch `main`, folder `/docs`. To turn it off again, set Source to "None" —
 but anything already fetched or indexed is out of your hands.
 
+### Publishing it daily
+
+`scripts/publish_report.bat` regenerates both artefacts from live history and
+commits and pushes them — but only when the figures actually changed, so a
+quiet day leaves no empty commit. Register it after the US close:
+
+```bat
+schtasks /Create /TN "clau-stock publish report" ^
+  /TR "C:\Users\user\clau-stock\scripts\publish_report.bat" /SC DAILY /ST 06:30
+```
+
+06:30 JST is shortly after the 21:00 UTC close, so each run publishes a
+finished session. The MT5 terminals must be running and logged in (the
+trading bots keep them open). A failed push is retried a few times and
+otherwise left as a local commit for the next run to carry up. Progress
+appends to `logs\publish_report.log`.
+
+Nothing about the page is monthly except the buckets: the headline, the
+per-strategy totals and the automatic checks all recompute, so a daily run
+shows the current month filling in.
+
 `--markdown [PATH]` writes the same figures as a Markdown report meant to be
 committed (`reports/` is tracked; `logs/` is not). Account numbers are masked
 to their last three digits there — a login plus the server name identifies the
