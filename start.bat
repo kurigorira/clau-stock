@@ -4,6 +4,7 @@ REM   account 1 (demo) - macd base US-stock fleet        config\us_fleet\*.yaml
 REM   account 2 (demo) - macd + stoch 80/20 fleet        config\us_fleet_a2\*.yaml
 REM   account 4 (demo) - bollrci mean-reversion fleet    config\us_fleet_a4\*.yaml
 REM   account 3 (LIVE) - manual management ONLY: the terminal opens, no bot.
+REM   any other MT5_PATH_<n> - terminal opens, no bot (manual accounts).
 REM
 REM Accounts 1 vs 2 are a live A/B: identical 100 spread-selected symbols,
 REM the only difference is the stoch 80/20 gate (OOS test +467 vs +276).
@@ -24,60 +25,26 @@ if not exist ".env" (
     pause
     exit /b 1
 )
-set "MT5_PATH_1="
-set "MT5_PATH_2="
-set "MT5_PATH_3="
-set "MT5_PATH_4="
+REM Suffixes 1-9 cover every account; unset ones are skipped, so a new
+REM account needs only its MT5_PATH_<n> line in .env - nothing to edit here.
+for %%n in (1 2 3 4 5 6 7 8 9) do set "MT5_PATH_%%n="
 for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
-    if /I "%%a"=="MT5_PATH_1" set "MT5_PATH_1=%%~b"
-    if /I "%%a"=="MT5_PATH_2" set "MT5_PATH_2=%%~b"
-    if /I "%%a"=="MT5_PATH_3" set "MT5_PATH_3=%%~b"
-    if /I "%%a"=="MT5_PATH_4" set "MT5_PATH_4=%%~b"
+    for %%n in (1 2 3 4 5 6 7 8 9) do (
+        if /I "%%a"=="MT5_PATH_%%n" set "MT5_PATH_%%n=%%~b"
+    )
 )
+REM The three bot accounts must be present; the rest are optional.
 for %%n in (1 2 4) do (
     call :require_path %%n || exit /b 1
 )
 
-REM ==== 2. Launch the bot terminals (re-launching is safe; MT5 dedupes per folder) ====
-echo [start.bat] launching account-1 terminal: %MT5_PATH_1%
-start "" "%MT5_PATH_1%"
-echo [start.bat] launching account-2 terminal: %MT5_PATH_2%
-start "" "%MT5_PATH_2%"
-echo [start.bat] launching account-4 terminal: %MT5_PATH_4%
-start "" "%MT5_PATH_4%"
-if defined MT5_PATH_3 (
-    if exist "%MT5_PATH_3%" (
-        echo [start.bat] launching account-3 LIVE terminal for manual management: %MT5_PATH_3%
-        start "" "%MT5_PATH_3%"
-    ) else (
-        echo [start.bat] WARNING: MT5_PATH_3 not found on disk: %MT5_PATH_3%
-        echo [start.bat] the LIVE terminal will not open - fix MT5_PATH_3 in .env
-    )
-) else (
-    echo [start.bat] NOTE: MT5_PATH_3 not set - LIVE terminal will not open
-)
-REM ==== 2b. Open any MT5 shortcut sitting on the Desktop ====
-REM Terminals not named in .env - a manually managed account, say - are
-REM usually opened from a Desktop shortcut. Matching on the shortcut NAME
-REM (mt5 / metatrader / vantage) rather than a fixed filename means a new
-REM one is picked up without editing this file. Re-launching an install MT5
-REM already has running is safe: it focuses the existing window instead of
-REM starting a second copy. Set SKIP_DESKTOP_SHORTCUTS=1 to turn this off.
-if defined SKIP_DESKTOP_SHORTCUTS (
-    echo [start.bat] SKIP_DESKTOP_SHORTCUTS set - not opening Desktop shortcuts
-) else (
-    for %%d in ("%USERPROFILE%\Desktop" "%OneDrive%\Desktop") do (
-        if exist "%%~d\" (
-            for %%f in ("%%~d\*.lnk") do (
-                echo "%%~nf"| findstr /i "mt5 metatrader vantage" >nul
-                if not errorlevel 1 (
-                    echo [start.bat] opening Desktop shortcut: "%%~nxf"
-                    start "" "%%~f"
-                )
-            )
-        )
-    )
-)
+REM ==== 2. Launch one terminal per configured account ====
+REM Each MT5_PATH_<n> is started AT MOST ONCE, and a path shared by two
+REM suffixes is opened a single time. MT5 gives one install one instance, but
+REM a /portable shortcut does not dedupe - starting it repeatedly piles up
+REM windows. Nothing is scanned: only what .env names is opened.
+set "LAUNCHED_PATHS="
+for %%n in (1 2 3 4 5 6 7 8 9) do call :launch_terminal %%n
 
 echo [start.bat] waiting 30 seconds for the terminals to load and auto-login...
 timeout /t 30 /nobreak >nul
@@ -104,10 +71,9 @@ start "clau-stock account 2 (macd+stoch)" cmd /k "call .venv\Scripts\activate.ba
 
 start "clau-stock account 4 (bollrci)" cmd /k "call .venv\Scripts\activate.bat && python -u scripts\run_live.py --account 4 config\us_fleet_a4\*.yaml"
 
-REM Account 3 (LIVE JPY 20k) stays bot-free by the 12-month review decision
-REM (EURUSD-small trained at PF 0.32). Its terminal opens above for manual
-REM position management only. Do not add a run_live line for it without a
-REM fresh OOS pass.
+REM Account 3 (LIVE) and any other account stay bot-free by design - their
+REM terminals open above for manual position management only. Do not add a
+REM run_live line for one without a fresh OOS pass.
 
 REM Price-change alerts (independent of trading; binds to account 1's terminal).
 REM run_alerts.py expands the glob, so the alert list tracks the live fleet.
@@ -117,12 +83,31 @@ echo.
 echo [start.bat] launched account 1 bot (macd base, 100 US stocks)
 echo [start.bat] launched account 2 bot (macd + stoch 80/20, same 100 symbols - A/B vs account 1)
 echo [start.bat] launched account 4 bot (bollrci mean reversion, same 100 symbols)
-echo [start.bat] account 3 LIVE terminal opened for MANUAL management only - no bot
+echo [start.bat] other accounts: terminal only, MANUAL management - no bot
 echo [start.bat] launched alerts (watchlist.yaml extras + the account-1 fleet)
 echo Logs: logs\account1.log / logs\account2.log / logs\account4.log / logs\alerts1.log
 echo Close a bot window or press Ctrl+C inside it to stop that account.
 echo.
 pause
+exit /b 0
+
+:launch_terminal
+call set "p=%%MT5_PATH_%1%%"
+if not defined p exit /b 0
+if not exist "%p%" (
+    echo [start.bat] WARNING: MT5_PATH_%1 not found on disk: %p%
+    exit /b 0
+)
+REM already opened under another suffix? two accounts cannot share a terminal
+REM anyway, so opening it twice would only stack windows.
+echo "%LAUNCHED_PATHS%"| findstr /i /c:"[%p%]" >nul
+if not errorlevel 1 (
+    echo [start.bat] account-%1 shares an already-opened terminal: %p%
+    exit /b 0
+)
+set "LAUNCHED_PATHS=%LAUNCHED_PATHS%[%p%]"
+echo [start.bat] launching account-%1 terminal: %p%
+start "" "%p%"
 exit /b 0
 
 :require_path

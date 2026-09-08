@@ -25,12 +25,16 @@ Preset files are named `fib_<symbol>.yaml` regardless of the strategy inside
 | 4 (demo) | `config/us_fleet_a4/*.yaml` — same 100 symbols | bollrci mean reversion, thr=60 (OOS test +502, 56% win) |
 | 3 (LIVE) | none — terminal opens for **manual management only** | **PAUSED** — 12-month train PF 0.32 on EURUSD-small; no bot line by design |
 
-`start.bat` also opens any Desktop shortcut whose name contains *mt5*,
-*metatrader* or *vantage* (both `%USERPROFILE%\Desktop` and a
-OneDrive-redirected Desktop), so a terminal that is not named in `.env` —
-a manually managed account, say — comes up with the rest. Re-launching an
-install MT5 already has running just focuses its window. Set
-`SKIP_DESKTOP_SHORTCUTS=1` to turn it off.
+`start.bat` opens one terminal per `MT5_PATH_<n>` found in `.env`
+(suffixes 1-9), each at most once, and skips a path already opened under
+another suffix. A manually managed account therefore comes up with the rest
+as soon as its `MT5_PATH_<n>` line exists — nothing in the launcher needs
+editing, and nothing is scanned. Only accounts 1, 2 and 4 get a bot; every
+other terminal opens for manual management.
+
+It deliberately does **not** open Desktop shortcuts. A shortcut with
+`/portable` in its target starts a fresh instance every time instead of
+focusing the running one, so launching those piles up MT5 windows.
 
 The `us_fleet*` dirs are machine-generated with live spread data
 (`scripts/gen_us_fleet.py`) and are **not** committed — generate them before
