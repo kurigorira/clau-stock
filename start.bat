@@ -19,6 +19,11 @@ REM missing rather than silently launching nothing.
 
 cd /d "%~dp0"
 
+REM UTF-8: a shortcut path can contain Japanese, and python-dotenv reads
+REM .env as UTF-8, so cmd must read it the same way or the path arrives as
+REM mojibake and reads as "not found on disk".
+chcp 65001 >nul
+
 REM ==== 1. Read MT5 terminal paths from .env ====
 if not exist ".env" (
     echo [start.bat] .env not found
@@ -28,9 +33,11 @@ if not exist ".env" (
 REM Suffixes 1-9 cover every account; unset ones are skipped, so a new
 REM account needs only its MT5_PATH_<n> line in .env - nothing to edit here.
 for %%n in (1 2 3 4 5 6 7 8 9) do set "MT5_PATH_%%n="
+for %%n in (1 2 3 4 5 6 7 8 9) do set "MT5_SHORTCUT_%%n="
 for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
     for %%n in (1 2 3 4 5 6 7 8 9) do (
         if /I "%%a"=="MT5_PATH_%%n" set "MT5_PATH_%%n=%%~b"
+        if /I "%%a"=="MT5_SHORTCUT_%%n" set "MT5_SHORTCUT_%%n=%%~b"
     )
 )
 REM The three bot accounts must be present; the rest are optional.
@@ -39,12 +46,17 @@ for %%n in (1 2 4) do (
 )
 
 REM ==== 2. Launch one terminal per configured account ====
-REM Each MT5_PATH_<n> is started AT MOST ONCE, and a path shared by two
-REM suffixes is opened a single time. MT5 gives one install one instance, but
-REM a /portable shortcut does not dedupe - starting it repeatedly piles up
-REM windows. Nothing is scanned: only what .env names is opened.
+REM Every path is started AT MOST ONCE, and one shared by two entries opens a
+REM single time - a /portable terminal does not dedupe itself, so starting it
+REM repeatedly just piles up windows.
+REM   MT5_PATH_<n>      an exe, for an account the bots or reports connect to
+REM   MT5_SHORTCUT_<n>  a .lnk, for a terminal that must keep its shortcut's
+REM                     arguments (/portable decides which data folder, and
+REM                     therefore which account, the terminal opens)
+REM Nothing is scanned: only what .env names is opened.
 set "LAUNCHED_PATHS="
-for %%n in (1 2 3 4 5 6 7 8 9) do call :launch_terminal %%n
+for %%n in (1 2 3 4 5 6 7 8 9) do call :launch_one "MT5_PATH_%%n" "account-%%n terminal"
+for %%n in (1 2 3 4 5 6 7 8 9) do call :launch_one "MT5_SHORTCUT_%%n" "shortcut %%n"
 
 echo [start.bat] waiting 30 seconds for the terminals to load and auto-login...
 timeout /t 30 /nobreak >nul
@@ -91,22 +103,23 @@ echo.
 pause
 exit /b 0
 
-:launch_terminal
-call set "p=%%MT5_PATH_%1%%"
+:launch_one
+REM %1 = name of the variable holding the path, %2 = label for the log
+call set "p=%%%~1%%"
 if not defined p exit /b 0
+REM Explorer hides the .lnk extension, so accept the name with or without it
+if not exist "%p%" if exist "%p%.lnk" set "p=%p%.lnk"
 if not exist "%p%" (
-    echo [start.bat] WARNING: MT5_PATH_%1 not found on disk: %p%
+    echo [start.bat] WARNING: %~1 not found on disk: %p%
     exit /b 0
 )
-REM already opened under another suffix? two accounts cannot share a terminal
-REM anyway, so opening it twice would only stack windows.
 echo "%LAUNCHED_PATHS%"| findstr /i /c:"[%p%]" >nul
 if not errorlevel 1 (
-    echo [start.bat] account-%1 shares an already-opened terminal: %p%
+    echo [start.bat] %~2 already opened: %p%
     exit /b 0
 )
 set "LAUNCHED_PATHS=%LAUNCHED_PATHS%[%p%]"
-echo [start.bat] launching account-%1 terminal: %p%
+echo [start.bat] launching %~2: %p%
 start "" "%p%"
 exit /b 0
 

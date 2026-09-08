@@ -32,9 +32,23 @@ as soon as its `MT5_PATH_<n>` line exists — nothing in the launcher needs
 editing, and nothing is scanned. Only accounts 1, 2 and 4 get a bot; every
 other terminal opens for manual management.
 
-It deliberately does **not** open Desktop shortcuts. A shortcut with
-`/portable` in its target starts a fresh instance every time instead of
-focusing the running one, so launching those piles up MT5 windows.
+To open a terminal by its **shortcut** rather than its exe, add
+`MT5_SHORTCUT_<n>` lines (1-9). A `.lnk` carries its target's arguments, and
+`/portable` is what decides which data folder — so which account — the
+terminal opens; launching the bare exe would start a different one:
+
+```
+MT5_SHORTCUT_1=C:\Users\user\Desktop\terminal64.exeリアル.lnk
+MT5_SHORTCUT_2=C:\Users\user\Desktop\terminal64.exeリアル2.lnk
+```
+
+The `.lnk` extension may be omitted (Explorer hides it). Save `.env` as
+**UTF-8** if any path contains Japanese — that is what `python-dotenv`
+expects, and `start.bat` switches the console to UTF-8 to match.
+
+The launcher never scans the Desktop. It did once, and a `/portable`
+shortcut starts a fresh instance on every launch instead of focusing the
+running one, so the windows piled up.
 
 The `us_fleet*` dirs are machine-generated with live spread data
 (`scripts/gen_us_fleet.py`) and are **not** committed — generate them before
