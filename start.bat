@@ -34,13 +34,18 @@ REM Suffixes 1-9 cover every account; unset ones are skipped, so a new
 REM account needs only its MT5_PATH_<n> line in .env - nothing to edit here.
 for %%n in (1 2 3 4 5 6 7 8 9) do set "MT5_PATH_%%n="
 for %%n in (1 2 3 4 5 6 7 8 9) do set "MT5_OPEN_%%n="
-for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
+REM delims is "=" AND space, so KEY = value and indented lines parse too.
+for /f "usebackq tokens=1,* delims== " %%a in (".env") do (
     for %%n in (1 2 3 4 5 6 7 8 9) do (
         if /I "%%a"=="MT5_PATH_%%n" set "MT5_PATH_%%n=%%~b"
         if /I "%%a"=="MT5_OPEN_%%n" set "MT5_OPEN_%%n=%%~b"
         if /I "%%a"=="MT5_SHORTCUT_%%n" set "MT5_OPEN_%%n=%%~b"
     )
 )
+echo [start.bat] terminal entries read from .env:
+for %%n in (1 2 3 4 5 6 7 8 9) do call :show_entry "MT5_PATH_%%n"
+for %%n in (1 2 3 4 5 6 7 8 9) do call :show_entry "MT5_OPEN_%%n"
+
 REM The three bot accounts must be present; the rest are optional.
 for %%n in (1 2 4) do (
     call :require_path %%n || exit /b 1
@@ -105,6 +110,11 @@ echo Logs: logs\account1.log / logs\account2.log / logs\account4.log / logs\aler
 echo Close a bot window or press Ctrl+C inside it to stop that account.
 echo.
 pause
+exit /b 0
+
+:show_entry
+call set "p=%%%~1%%"
+if defined p echo [start.bat]   %~1 = %p%
 exit /b 0
 
 :launch_one
