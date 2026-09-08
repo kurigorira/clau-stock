@@ -10,7 +10,7 @@ Each account's MT5 terminal must be running and logged in (they normally
 are - the bots keep them open; start.bat opens the live terminal too).
 
 Usage:
-    python scripts/monthly_report.py                     # accounts 1 2 3 4
+    python scripts/monthly_report.py                     # every account in .env
     python scripts/monthly_report.py --accounts 1 4
     python scripts/monthly_report.py --months 3
     python scripts/monthly_report.py --csv logs/monthly.csv
@@ -70,7 +70,10 @@ def main() -> None:
         pass
 
     parser = argparse.ArgumentParser(description="clau-stock monthly operating statistics")
-    parser.add_argument("--accounts", nargs="*", default=["1", "2", "3", "4"])
+    parser.add_argument(
+        "--accounts", nargs="*", default=None,
+        help="env-var suffixes; default is every account configured in .env",
+    )
     parser.add_argument("--months", type=int, default=6, help="how many months back (default 6)")
     parser.add_argument("--csv", default=None, help="also write tidy per-month rows to this CSV")
     parser.add_argument(
@@ -103,19 +106,23 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dotenv()
+    accounts = args.accounts or report.discover_accounts()
+    if not accounts:
+        sys.stderr.write(
+            "no accounts found: set MT5_LOGIN_<n> / MT5_PASSWORD_<n> / "
+            "MT5_SERVER_<n> in .env, or pass --accounts\n"
+        )
+        sys.exit(2)
     log = logging.getLogger("monthly_report")
     logging.basicConfig(level="INFO", format="%(asctime)s | %(levelname)-7s | %(message)s")
 
     repo_root = Path(__file__).resolve().parents[1]
+    # recursive: generated fleets under config/us_fleet* are picked up too
     magic_index = report.load_magic_index(repo_root / "config")
-    for sub in ("us_fleet", "us_fleet_a2", "us_fleet_a4"):
-        d = repo_root / "config" / sub
-        if d.is_dir():
-            magic_index.update(report.load_magic_index(d))
 
     start = _window_start(args.months)
     reports: list[AccountMonthly] = []
-    for account_id in args.accounts:
+    for account_id in accounts:
         suffix = f"_{account_id}"
         try:
             creds = MT5Credentials(

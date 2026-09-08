@@ -432,7 +432,7 @@ swap on every deal of the position, the entry deal's included. Each
 account's MT5 terminal must be running and logged in.
 
 ```bash
-python scripts/monthly_report.py                    # accounts 1 2 3 4, last 6 months
+python scripts/monthly_report.py                    # every account in .env, last 6 months
 python scripts/monthly_report.py --months 12
 python scripts/monthly_report.py --csv logs/monthly.csv
 python scripts/monthly_report.py --markdown         # -> reports/monthly.md
@@ -556,6 +556,16 @@ Reading the verdict:
 The window starts at the first live entry unless `--since` says otherwise, so
 a fleet launched partway through the period is not blamed for signals that
 fired before it existed.
+
+Both reports default to **every account configured in `.env`** — any
+complete `MT5_LOGIN_<n>` / `MT5_PASSWORD_<n>` / `MT5_SERVER_<n>` triple —
+so adding a fifth account needs no code change. `--accounts` still
+restricts the run.
+
+Strategy attribution is keyed by **(symbol, magic)**, not magic alone:
+retired presets and generated fleets share magic ranges, and a deal
+carries both fields. A pair claimed by two configs with different
+strategies reports as `ambiguous` rather than guessing.
 
 ## Magic numbers
 

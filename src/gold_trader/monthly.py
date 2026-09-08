@@ -141,7 +141,7 @@ def build_trades(
                 position_id=pos_id,
                 symbol=last_out.symbol,
                 magic=last_out.magic,
-                strategy=strategy_of(last_out.magic, magic_index),
+                strategy=strategy_of(last_out.symbol, last_out.magic, magic_index),
                 close_time=datetime.fromtimestamp(last_out.time, tz=tz),
                 net=net,
                 hours_held=hours,

@@ -52,8 +52,8 @@ def test_load_magic_index_indexes_real_presets(tmp_path):
         encoding="utf-8",
     )
     idx = report.load_magic_index(tmp_path)
-    assert 111 in idx
-    assert idx[111].symbol == "XAUUSD"
+    assert ("XAUUSD", 111) in idx
+    assert idx[("XAUUSD", 111)].symbol == "XAUUSD"
 
 
 def test_load_magic_index_skips_non_preset_yaml(tmp_path):
@@ -67,7 +67,7 @@ def test_load_magic_index_skips_non_preset_yaml(tmp_path):
         encoding="utf-8",
     )
     idx = report.load_magic_index(tmp_path)
-    assert idx[20260509].symbol == "BTCUSD"
+    assert idx[("BTCUSD", 20260509)].symbol == "BTCUSD"
     assert len(idx) == 1
 
 
@@ -75,7 +75,9 @@ def test_load_magic_index_covers_real_config_dir():
     config_dir = Path(__file__).resolve().parents[1] / "config"
     idx = report.load_magic_index(config_dir)
     assert len(idx) >= 80
-    assert all(isinstance(cfg, Config) for cfg in idx.values())
+    assert all(isinstance(k, tuple) and len(k) == 2 for k in idx)
+    # a value is None only where two configs claim one (symbol, magic)
+    assert all(cfg is None or isinstance(cfg, Config) for cfg in idx.values())
 
 
 # ---------------------------------------------------------------------------
@@ -83,17 +85,29 @@ def test_load_magic_index_covers_real_config_dir():
 # ---------------------------------------------------------------------------
 
 
-def test_strategy_of_known_magic():
-    idx = {111: _cfg(111, strategy="donchian")}
-    assert report.strategy_of(111, idx) == "donchian"
+def test_strategy_of_known_symbol_and_magic():
+    idx = {("XAUUSD", 111): _cfg(111, strategy="donchian")}
+    assert report.strategy_of("XAUUSD", 111, idx) == "donchian"
+
+
+def test_strategy_of_does_not_fall_back_across_symbols():
+    # a retired preset and a generated fleet config can share a magic;
+    # attributing one's trades to the other is the bug this key prevents
+    idx = {("AAPL", 20260701): _cfg(20260701, strategy="macd")}
+    assert report.strategy_of("GBPUSD", 20260701, idx) == "unknown"
+
+
+def test_strategy_of_reports_an_unresolvable_pair():
+    idx = {("AMD", 20260734): None}
+    assert report.strategy_of("AMD", 20260734, idx) == "ambiguous"
 
 
 def test_strategy_of_zero_magic_is_manual():
-    assert report.strategy_of(0, {}) == "manual"
+    assert report.strategy_of("XAUUSD", 0, {}) == "manual"
 
 
 def test_strategy_of_unknown_nonzero_magic():
-    assert report.strategy_of(99999, {}) == "unknown"
+    assert report.strategy_of("XAUUSD", 99999, {}) == "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +120,7 @@ def test_group_closed_deals_sums_pnl_and_counts():
         FakeDeal("XAUUSD", 111, profit=10.0, commission=-1.0, swap=0.0, time=100),
         FakeDeal("XAUUSD", 111, profit=-5.0, commission=-1.0, swap=0.0, time=200),
     ]
-    idx = {111: _cfg(111)}
+    idx = {("XAUUSD", 111): _cfg(111)}
     groups = report.group_closed_deals(deals, idx, equity=100000.0)
     assert len(groups) == 1
     g = groups[0]
@@ -122,7 +136,7 @@ def test_group_closed_deals_loss_streak_counts_from_most_recent():
         FakeDeal("EURUSD", 5, profit=-1.0, commission=0, swap=0, time=200),  # loss
         FakeDeal("EURUSD", 5, profit=-1.0, commission=0, swap=0, time=300),  # loss (most recent)
     ]
-    idx = {5: _cfg(5)}
+    idx = {("EURUSD", 5): _cfg(5)}
     groups = report.group_closed_deals(deals, idx, equity=100000.0)
     assert groups[0].loss_streak == 2
 
@@ -132,14 +146,14 @@ def test_group_closed_deals_streak_resets_on_win():
         FakeDeal("EURUSD", 5, profit=-1.0, commission=0, swap=0, time=100),
         FakeDeal("EURUSD", 5, profit=10.0, commission=0, swap=0, time=200),  # most recent: win
     ]
-    idx = {5: _cfg(5)}
+    idx = {("EURUSD", 5): _cfg(5)}
     groups = report.group_closed_deals(deals, idx, equity=100000.0)
     assert groups[0].loss_streak == 0
 
 
 def test_group_closed_deals_flags_guard_tripped_by_loss_pct():
     deals = [FakeDeal("XAUUSD", 111, profit=-3000.0, commission=0, swap=0, time=100)]
-    idx = {111: _cfg(111, max_loss_pct=2.0)}  # 2% of 100000 = 2000 cap
+    idx = {("XAUUSD", 111): _cfg(111, max_loss_pct=2.0)}  # 2% of 100000 = 2000 cap
     groups = report.group_closed_deals(deals, idx, equity=100000.0)
     assert groups[0].guard_tripped is True
 
@@ -149,14 +163,14 @@ def test_group_closed_deals_flags_guard_tripped_by_streak():
         FakeDeal("XAUUSD", 111, profit=-1.0, commission=0, swap=0, time=100),
         FakeDeal("XAUUSD", 111, profit=-1.0, commission=0, swap=0, time=200),
     ]
-    idx = {111: _cfg(111, max_consecutive_losses=2, max_loss_pct=99.0)}
+    idx = {("XAUUSD", 111): _cfg(111, max_consecutive_losses=2, max_loss_pct=99.0)}
     groups = report.group_closed_deals(deals, idx, equity=100000.0)
     assert groups[0].guard_tripped is True
 
 
 def test_group_closed_deals_not_tripped_when_within_limits():
     deals = [FakeDeal("XAUUSD", 111, profit=-10.0, commission=0, swap=0, time=100)]
-    idx = {111: _cfg(111, max_loss_pct=2.0)}
+    idx = {("XAUUSD", 111): _cfg(111, max_loss_pct=2.0)}
     groups = report.group_closed_deals(deals, idx, equity=100000.0)
     assert groups[0].guard_tripped is False
 
@@ -185,7 +199,9 @@ def test_group_closed_deals_separates_by_symbol_and_magic():
 
 def test_to_position_snapshot_buy():
     pos = FakePosition("XAUUSD", 0, 0.02, 2400.0, 12.5, 2380.0, 2450.0, 111, 999)
-    snap = report.to_position_snapshot(pos, {111: _cfg(111, strategy="donchian")})
+    snap = report.to_position_snapshot(
+        pos, {("XAUUSD", 111): _cfg(111, strategy="donchian")}
+    )
     assert snap.side == "buy"
     assert snap.strategy == "donchian"
     assert snap.ticket == 999
@@ -267,3 +283,37 @@ def test_format_report_email_no_open_positions_says_none():
     r = report.AccountReport(account="1", equity=100.0, balance=100.0)
     _, body = report.format_report_email([r], "2026-07-16 06:00")
     assert "open positions: none" in body
+
+
+# ---------------------------------------------------------------------------
+# discover_accounts
+# ---------------------------------------------------------------------------
+
+
+def test_discover_accounts_orders_numerically():
+    env = {}
+    for n in ("1", "10", "2"):
+        env |= {f"MT5_LOGIN_{n}": "x", f"MT5_PASSWORD_{n}": "p", f"MT5_SERVER_{n}": "s"}
+    assert report.discover_accounts(env) == ["1", "2", "10"]
+
+
+def test_discover_accounts_skips_incomplete_blocks():
+    env = {
+        "MT5_LOGIN_1": "x", "MT5_PASSWORD_1": "p", "MT5_SERVER_1": "s",
+        "MT5_LOGIN_9": "x",                       # no password/server
+        "MT5_LOGIN": "x", "MT5_PASSWORD": "p", "MT5_SERVER": "s",  # legacy, unsuffixed
+        "UNRELATED": "y",
+    }
+    assert report.discover_accounts(env) == ["1"]
+
+
+def test_discover_accounts_handles_non_numeric_suffixes():
+    env = {}
+    for n in ("2", "live"):
+        env |= {f"MT5_LOGIN_{n}": "x", f"MT5_PASSWORD_{n}": "p", f"MT5_SERVER_{n}": "s"}
+    # numbers first, then names, so the usual case reads in order
+    assert report.discover_accounts(env) == ["2", "live"]
+
+
+def test_discover_accounts_empty_env():
+    assert report.discover_accounts({}) == []

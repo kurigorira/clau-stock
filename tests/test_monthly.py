@@ -34,7 +34,9 @@ def _unix(y, mo, d, h=12):
 def _index():
     cfg = Config()
     cfg.strategy = "macd"
-    return {123: cfg}
+    # the index is keyed by (symbol, magic): these fixtures trade a handful
+    # of symbols under one magic, so register each pair
+    return {(s, 123): cfg for s in ("AAPL", "MSFT", "NVDA", "X")}
 
 
 # --- build_trades -----------------------------------------------------------

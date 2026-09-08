@@ -49,7 +49,7 @@ def live_stats_from_deals(deals: list[Any], strategy_of) -> list[LiveStats]:
     for d in deals:
         net = float(d.profit) + float(d.commission) + float(d.swap)
         groups[d.symbol].append(net)
-        strat.setdefault(d.symbol, strategy_of(d.magic))
+        strat.setdefault(d.symbol, strategy_of(d.symbol, d.magic))
 
     out: list[LiveStats] = []
     for symbol, nets in groups.items():

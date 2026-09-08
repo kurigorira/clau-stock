@@ -54,15 +54,22 @@ class AccountReport:
     error: str | None = None
 
 
-def load_magic_index(config_dir: str | Path) -> dict[int, Config]:
-    """magic_number -> Config for every genuine preset in config/.
+def load_magic_index(config_dir: str | Path) -> dict[tuple[str, int], Config]:
+    """(symbol, magic_number) -> Config for every genuine preset under config/.
 
-    Only files that declare both `symbol` and `execution.magic_number` are
-    indexed, so non-preset YAMLs (watchlist.yaml) can't collide with a real
-    magic via Config's defaults.
+    Keyed by symbol AND magic, not magic alone: retired presets and generated
+    fleets have overlapping magic ranges, and a deal carries both fields, so
+    the pair identifies the config that placed it even when the magic does
+    not. Keying by magic alone silently filed a retired preset's FX trades
+    under whichever fleet config loaded last.
+
+    Searched recursively, so generated fleets in config/us_fleet* are indexed
+    without every caller having to name them. Only files declaring both
+    `symbol` and `execution.magic_number` are included, so non-preset YAMLs
+    (watchlist.yaml) cannot enter via Config's defaults.
     """
-    out: dict[int, Config] = {}
-    for p in Path(config_dir).glob("*.yaml"):
+    out: dict[tuple[str, int], Config] = {}
+    for p in sorted(Path(config_dir).rglob("*.yaml")):
         try:
             raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError:
@@ -73,19 +80,36 @@ def load_magic_index(config_dir: str | Path) -> dict[int, Config]:
             cfg = Config.from_yaml(p)
         except Exception:  # noqa: BLE001
             continue
-        out[cfg.execution.magic_number] = cfg
+        key = (cfg.symbol, cfg.execution.magic_number)
+        if key in out and out[key] is not None:
+            other = out[key]
+            if other.strategy != cfg.strategy:
+                # Two configs are indistinguishable at the broker on this
+                # instrument. Picking one would invent an attribution, so mark
+                # the pair unresolvable and let callers say so.
+                out[key] = None
+                continue
+        out[key] = cfg
     return out
 
 
-def strategy_of(magic: int, magic_index: dict[int, Config]) -> str:
-    cfg = magic_index.get(magic)
-    if cfg is not None:
-        return cfg.strategy
+def strategy_of(
+    symbol: str, magic: int, magic_index: dict[tuple[str, int], Config | None]
+) -> str:
+    """Strategy behind a deal, from its symbol AND magic.
+
+    No fall back to a magic-only match: a different symbol on the same magic
+    is a different config, and treating it as this one is exactly the
+    mis-attribution the pair key exists to prevent.
+    """
+    if (symbol, magic) in magic_index:
+        cfg = magic_index[(symbol, magic)]
+        return cfg.strategy if cfg is not None else "ambiguous"
     return "manual" if magic == 0 else "unknown"
 
 
 def group_closed_deals(
-    deals: list[Any], magic_index: dict[int, Config], equity: float
+    deals: list[Any], magic_index: dict[tuple[str, int], Config | None], equity: float
 ) -> list[ClosedGroup]:
     """Aggregate today's closing deals by (symbol, magic).
 
@@ -111,8 +135,8 @@ def group_closed_deals(
             else:
                 break
 
-        cfg = magic_index.get(magic)
-        strategy = strategy_of(magic, magic_index)
+        cfg = magic_index.get((symbol, magic))
+        strategy = strategy_of(symbol, magic, magic_index)
         tripped = False
         if cfg is not None:
             g = cfg.daily_guard
@@ -129,14 +153,16 @@ def group_closed_deals(
     return sorted(out, key=lambda g: g.pnl)
 
 
-def to_position_snapshot(p: Any, magic_index: dict[int, Config]) -> PositionSnapshot:
+def to_position_snapshot(
+    p: Any, magic_index: dict[tuple[str, int], Config | None]
+) -> PositionSnapshot:
     """Build a PositionSnapshot from an MT5 position object (duck-typed:
     .symbol .type .volume .price_open .profit .sl .tp .magic .ticket)."""
     side = "buy" if p.type == 0 else "sell"  # POSITION_TYPE_BUY = 0
     return PositionSnapshot(
         symbol=p.symbol, side=side, volume=p.volume, price_open=p.price_open,
         profit=p.profit, sl=p.sl, tp=p.tp, magic=p.magic,
-        strategy=strategy_of(p.magic, magic_index), ticket=p.ticket,
+        strategy=strategy_of(p.symbol, p.magic, magic_index), ticket=p.ticket,
     )
 
 
@@ -217,3 +243,26 @@ def format_report_email(reports: list[AccountReport], generated_at: str) -> tupl
         lines.append("")
 
     return subject, "\n".join(lines)
+
+
+def discover_accounts(env: dict[str, str] | None = None) -> list[str]:
+    """Account suffixes present in the environment, in numeric-ish order.
+
+    Reads MT5_LOGIN_<suffix> so adding a fifth account to .env is enough for
+    the reports to pick it up - no default list to keep in step. A suffix is
+    only returned when its password and server are set too, since a partial
+    block would just fail at connect time.
+    """
+    import os
+    import re
+
+    src = os.environ if env is None else env
+    out: list[str] = []
+    for key in src:
+        m = re.fullmatch(r"MT5_LOGIN_(\w+)", key)
+        if not m:
+            continue
+        suffix = m.group(1)
+        if src.get(f"MT5_PASSWORD_{suffix}") and src.get(f"MT5_SERVER_{suffix}"):
+            out.append(suffix)
+    return sorted(out, key=lambda s: (not s.isdigit(), int(s) if s.isdigit() else s))

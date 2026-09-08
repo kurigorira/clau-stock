@@ -34,7 +34,9 @@ def _index():
     macd, boll = Config(), Config()
     macd.strategy = "macd"
     boll.strategy = "bollrci"
-    return {123: macd, 456: boll}
+    idx = {(s, 123): macd for s in ("AAPL", "MSFT", "NVDA")}
+    idx[("NVDA", 456)] = boll
+    return idx
 
 
 def _reports():

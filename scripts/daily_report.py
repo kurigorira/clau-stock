@@ -75,11 +75,21 @@ def main() -> None:
         pass
 
     parser = argparse.ArgumentParser(description="clau-stock twice-daily status email")
-    parser.add_argument("--accounts", nargs="*", default=["1", "2", "3", "4"])
+    parser.add_argument(
+        "--accounts", nargs="*", default=None,
+        help="env-var suffixes; default is every account configured in .env",
+    )
     parser.add_argument("--dry-run", action="store_true", help="print the report, don't email it")
     args = parser.parse_args()
 
     load_dotenv()
+    accounts = args.accounts or report.discover_accounts()
+    if not accounts:
+        sys.stderr.write(
+            "no accounts found: set MT5_LOGIN_<n> / MT5_PASSWORD_<n> / "
+            "MT5_SERVER_<n> in .env, or pass --accounts\n"
+        )
+        sys.exit(2)
     log = logging.getLogger("daily_report")
     logging.basicConfig(level="INFO", format="%(asctime)s | %(levelname)-7s | %(message)s")
 
@@ -87,7 +97,7 @@ def main() -> None:
     magic_index = report.load_magic_index(repo_root / "config")
 
     reports: list[AccountReport] = []
-    for account_id in args.accounts:
+    for account_id in accounts:
         suffix = f"_{account_id}"
         try:
             creds = MT5Credentials(

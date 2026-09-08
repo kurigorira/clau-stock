@@ -196,9 +196,11 @@ def main() -> None:
         sys.exit(2)
 
     repo_root = Path(__file__).resolve().parents[1]
+    # recursive, so config/us_fleet* is indexed without naming each dir
     magic_index = report.load_magic_index(repo_root / "config")
     for d in sorted({Path(x).parent for x in paths}):
-        magic_index.update(report.load_magic_index(d))
+        if repo_root / "config" not in d.resolve().parents:
+            magic_index.update(report.load_magic_index(d))
 
     suffix = f"_{args.account}" if args.account else ""
     try:

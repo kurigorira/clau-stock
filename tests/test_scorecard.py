@@ -18,7 +18,9 @@ class FakeDeal:
 
 
 def _strategy_of(mapping):
-    return lambda magic: mapping.get(magic, "unknown")
+    # the real callback is keyed by (symbol, magic); these fixtures only
+    # vary the magic, so the symbol is accepted and ignored
+    return lambda symbol, magic: mapping.get(magic, "unknown")
 
 
 # ---------------------------------------------------------------------------

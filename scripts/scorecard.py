@@ -70,8 +70,8 @@ def main() -> None:
     magic_index = report.load_magic_index(CONFIG_DIR)
     fleet = launched_strategies(repo_root)
 
-    def strategy_of(magic: int) -> str:
-        return report.strategy_of(magic, magic_index)
+    def strategy_of(symbol: str, magic: int) -> str:
+        return report.strategy_of(symbol, magic, magic_index)
 
     suffix = f"_{args.account}"
     try:
