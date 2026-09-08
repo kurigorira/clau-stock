@@ -34,6 +34,7 @@ from gold_trader.breadth import (  # noqa: E402
 )
 from gold_trader.cli_util import expand_paths, rank_by_spread  # noqa: E402
 from gold_trader.config import Config  # noqa: E402
+from gold_trader.magics import scan_magics  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 
 TEMPLATE = """\
@@ -134,7 +135,16 @@ def main() -> None:
     p.add_argument("--max-total-positions", type=int, default=8)
     p.add_argument("--min-net", type=float, default=1)
     p.add_argument("--lookback", type=int, default=100)
-    p.add_argument("--magic-base", type=int, default=20260700)
+    # 20260700 was the original default and it collides head-on with the
+    # retired fib presets, which occupy 20260701-20260770. Positions are keyed
+    # by (symbol, magic), so a clash on the same symbol lets two bots manage
+    # one position, and every magic -> strategy lookup in the reports breaks.
+    p.add_argument("--magic-base", type=int, default=20270100)
+    p.add_argument("--allow-magic-clash", action="store_true",
+                   help="write the fleet even when its magic range is already "
+                        "claimed by other configs (you will get unreliable "
+                        "strategy attribution, and same-symbol clashes let two "
+                        "bots fight over one position)")
     p.add_argument("--no-h4-filter", action="store_true",
                    help="disable the H4 trend gate. Measured OOS on the liquid "
                         "fleet with 5bp costs: WITH the filter test PnL was "
@@ -253,7 +263,47 @@ def main() -> None:
     _write_fleet(universe, spreads, args)
 
 
+def _check_magic_range(universe, args) -> None:
+    """Refuse to mint magics another config already owns."""
+    out_dir = Path(args.out_dir).resolve()
+    repo_cfg = Path(__file__).resolve().parents[1] / "config"
+    others = [p for p in repo_cfg.rglob("*.yaml") if p.resolve().parent != out_dir]
+    taken: dict[int, str] = {}
+    for e in scan_magics(others):
+        taken.setdefault(e.magic, f"{Path(e.path).name} ({e.symbol})")
+
+    wanted = {args.magic_base + i: sym for i, sym in enumerate(universe)}
+    clashes = {m: (sym, taken[m]) for m, sym in wanted.items() if m in taken}
+    if not clashes:
+        return
+
+    same_symbol = [
+        m for m, (sym, owner) in clashes.items() if f"({sym})" in owner
+    ]
+    sys.stderr.write(
+        f"magic range {args.magic_base}-{args.magic_base + len(universe) - 1} "
+        f"overlaps {len(clashes)} magic(s) already used by other configs "
+        f"({len(same_symbol)} on the same symbol).\n"
+    )
+    for m in sorted(clashes)[:8]:
+        sym, owner = clashes[m]
+        sys.stderr.write(f"  {m}  this fleet: {sym:<12} already: {owner}\n")
+    if len(clashes) > 8:
+        sys.stderr.write(f"  ... and {len(clashes) - 8} more\n")
+
+    used = {e.magic for e in scan_magics(others)}
+    base = (max(used) // 100 + 1) * 100 if used else 20270100
+    while any(m in used for m in range(base, base + len(universe))):
+        base += 100
+    sys.stderr.write(f"\nfree block: --magic-base {base}\n")
+    if not args.allow_magic_clash:
+        sys.stderr.write("refusing to write; pass --allow-magic-clash to override\n")
+        sys.exit(2)
+    sys.stderr.write("--allow-magic-clash set, writing anyway\n\n")
+
+
 def _write_fleet(universe, spreads, args) -> None:
+    _check_magic_range(universe, args)
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths = []

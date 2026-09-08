@@ -28,6 +28,11 @@ from gold_trader.cli_util import expand_paths  # noqa: E402
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.executor import Executor  # noqa: E402
 from gold_trader.logger import setup_logging  # noqa: E402
+from gold_trader.magics import (  # noqa: E402
+    find_collisions,
+    format_collisions,
+    scan_magics,
+)
 from gold_trader.mt5_client import (  # noqa: E402
     MT5Credentials,
     UnknownSymbolError,
@@ -80,6 +85,39 @@ def main() -> None:
             f"MT5_PASSWORD{suffix} / MT5_SERVER{suffix} in .env?\n"
         )
         sys.exit(2)
+
+    # A magic number is how a position is claimed. Two configs in the launch
+    # set sharing one over the same symbol means two executors can manage and
+    # close the same position, so refuse rather than start.
+    launch_magics = scan_magics(config_paths)
+    launch_clashes = find_collisions(launch_magics)
+    if launch_clashes:
+        log.error("magic-number collisions inside this launch set:\n"
+                  + format_collisions(launch_clashes))
+        if any(c.same_symbol for c in launch_clashes):
+            log.error("refusing to start: two configs would fight over the same "
+                      "position. Regenerate the fleet with a free --magic-base "
+                      "(scripts/diag_magic_collisions.py --free-range 100).")
+            sys.exit(2)
+
+    # Configs outside this launch set can still claim the same magics - another
+    # account's fleet, or a retired preset left in config/. That does not break
+    # trading (positions are keyed by symbol AND magic) but it does corrupt
+    # every magic -> strategy lookup the reports depend on, so say so.
+    repo_cfg = Path(__file__).resolve().parents[1] / "config"
+    others = [p for p in repo_cfg.rglob("*.yaml") if str(p) not in set(config_paths)]
+    cross = [
+        c for c in find_collisions(launch_magics + scan_magics(others))
+        if c not in launch_clashes
+    ]
+    if cross:
+        same = [c for c in cross if c.same_symbol]
+        log.warning(
+            f"{len(cross)} magic(s) in this fleet are also used by configs "
+            f"outside it ({len(same)} on the same symbol). Reports that map a "
+            f"magic to a strategy will be unreliable for those trades. "
+            f"Run scripts/diag_magic_collisions.py for the list."
+        )
 
     with connect(creds):
         # Check the catalogue before starting rather than discovering a bad

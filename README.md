@@ -536,6 +536,34 @@ The window starts at the first live entry unless `--since` says otherwise, so
 a fleet launched partway through the period is not blamed for signals that
 fired before it existed.
 
+## Magic numbers
+
+A magic number is how a position is claimed: the executor finds its own
+positions by **(symbol, magic)**, reports attribute a closed deal to a
+strategy by magic, and the daily guard counts losses by magic. Two configs
+sharing one break things in two different ways:
+
+- **Different symbols** — ownership is still unambiguous, but every
+  magic → strategy lookup is wrong, because the index keeps one config per
+  magic. Reports lie; trading is unaffected.
+- **Same symbol** — the two configs are indistinguishable at the broker and
+  whichever bot polls first can close the other's position. A live hazard.
+
+```bash
+python scripts/diag_magic_collisions.py                  # scans config/**
+python scripts/diag_magic_collisions.py --free-range 100 # suggest a base
+```
+
+Exits 1 on any collision and 2 when one is same-symbol, so it can gate a
+launch. `run_live.py` refuses to start on a same-symbol collision inside its
+own launch set and warns about magics shared with configs outside it;
+`gen_us_fleet.py` refuses to mint a range another config already owns
+(`--allow-magic-clash` overrides).
+
+Ranges in use: the retired fib presets hold **20260501–20260770**, so a new
+fleet must start above that — the generator now defaults to `20270100`. The
+original `20260700` default overlapped 70 retired presets head-on.
+
 ## Is the A/B actually an A/B?
 
 `scripts/diag_fleet_diff.py` diffs two fleets' settings symbol by symbol and
