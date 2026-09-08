@@ -317,3 +317,18 @@ def test_discover_accounts_handles_non_numeric_suffixes():
 
 def test_discover_accounts_empty_env():
     assert report.discover_accounts({}) == []
+
+
+def test_discover_accounts_accepts_a_path_only_account():
+    # a manual account whose password is not to hand: MT5_PATH alone attaches
+    # to the terminal that is already logged in, which is enough to report on
+    env = {
+        "MT5_LOGIN_1": "x", "MT5_PASSWORD_1": "p", "MT5_SERVER_1": "s",
+        "MT5_PATH_5": r"C:\MT5-manual\terminal64.exe",
+    }
+    assert report.discover_accounts(env) == ["1", "5"]
+
+
+def test_discover_accounts_skips_a_login_without_its_secret_or_path():
+    env = {"MT5_LOGIN_7": "x", "MT5_SERVER_7": "s"}   # no password, no path
+    assert report.discover_accounts(env) == []

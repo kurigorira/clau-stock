@@ -557,10 +557,16 @@ The window starts at the first live entry unless `--since` says otherwise, so
 a fleet launched partway through the period is not blamed for signals that
 fired before it existed.
 
-Both reports default to **every account configured in `.env`** — any
-complete `MT5_LOGIN_<n>` / `MT5_PASSWORD_<n>` / `MT5_SERVER_<n>` triple —
-so adding a fifth account needs no code change. `--accounts` still
-restricts the run.
+Both reports default to **every account configured in `.env`**, so adding a
+fifth account needs no code change; `--accounts` still restricts the run.
+An account counts either way `.env` can reach it:
+
+- a full `MT5_LOGIN_<n>` / `MT5_PASSWORD_<n>` / `MT5_SERVER_<n>` triple, or
+- **`MT5_PATH_<n>` alone**, which attaches to whatever that terminal is
+  already logged into. Reading balances and history needs no password, so
+  this is the route for a manual account whose password is not to hand —
+  the terminal just has to be running and logged in. Trading still requires
+  the full triple, so a bot never runs against a surprise account.
 
 Strategy attribution is keyed by **(symbol, magic)**, not magic alone:
 retired presets and generated fleets share magic ranges, and a deal

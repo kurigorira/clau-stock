@@ -248,21 +248,28 @@ def format_report_email(reports: list[AccountReport], generated_at: str) -> tupl
 def discover_accounts(env: dict[str, str] | None = None) -> list[str]:
     """Account suffixes present in the environment, in numeric-ish order.
 
-    Reads MT5_LOGIN_<suffix> so adding a fifth account to .env is enough for
-    the reports to pick it up - no default list to keep in step. A suffix is
-    only returned when its password and server are set too, since a partial
-    block would just fail at connect time.
+    An account counts when .env can reach it either way: a full
+    MT5_LOGIN/PASSWORD/SERVER triple, or MT5_PATH alone - the latter attaches
+    to a terminal that is already logged in, which is all a report needs and
+    the only route to an account whose password is not to hand. A login
+    without its password and server is skipped, since that would only fail
+    at connect time.
     """
     import os
     import re
 
     src = os.environ if env is None else env
-    out: list[str] = []
+    out: set[str] = set()
     for key in src:
-        m = re.fullmatch(r"MT5_LOGIN_(\w+)", key)
+        m = re.fullmatch(r"MT5_(?:LOGIN|PATH)_(\w+)", key)
         if not m:
             continue
         suffix = m.group(1)
-        if src.get(f"MT5_PASSWORD_{suffix}") and src.get(f"MT5_SERVER_{suffix}"):
-            out.append(suffix)
+        full = (
+            src.get(f"MT5_LOGIN_{suffix}")
+            and src.get(f"MT5_PASSWORD_{suffix}")
+            and src.get(f"MT5_SERVER_{suffix}")
+        )
+        if full or src.get(f"MT5_PATH_{suffix}"):
+            out.add(suffix)
     return sorted(out, key=lambda s: (not s.isdigit(), int(s) if s.isdigit() else s))

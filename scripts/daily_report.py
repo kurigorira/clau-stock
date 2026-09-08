@@ -99,14 +99,15 @@ def main() -> None:
     reports: list[AccountReport] = []
     for account_id in accounts:
         suffix = f"_{account_id}"
-        try:
-            creds = MT5Credentials(
-                login=int(os.environ[f"MT5_LOGIN{suffix}"]),
-                password=os.environ[f"MT5_PASSWORD{suffix}"],
-                server=os.environ[f"MT5_SERVER{suffix}"],
-                path=os.environ.get(f"MT5_PATH{suffix}") or None,
-            )
-        except KeyError as missing:
+        creds = MT5Credentials(
+            login=int(os.environ.get(f"MT5_LOGIN{suffix}") or 0),
+            password=os.environ.get(f"MT5_PASSWORD{suffix}", ""),
+            server=os.environ.get(f"MT5_SERVER{suffix}", ""),
+            path=os.environ.get(f"MT5_PATH{suffix}") or None,
+        )
+        # attach-only needs the terminal running and logged in; say which
+        if creds.attach_only and not creds.path:
+            missing = f"MT5_LOGIN{suffix}/MT5_PASSWORD{suffix}/MT5_SERVER{suffix}"
             reports.append(AccountReport(account=account_id, error=f"missing env var {missing}"))
             continue
 

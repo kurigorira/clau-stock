@@ -70,22 +70,46 @@ def _closed_retcodes(mt5) -> set:
 
 @dataclass
 class MT5Credentials:
-    login: int
-    password: str
-    server: str
+    """How to reach one account's terminal.
+
+    login/password/server log a terminal IN. Leaving them empty and giving
+    only `path` attaches to whatever that terminal is ALREADY logged into -
+    enough to read balances and history, which is all the reports need, and
+    the only option for an account whose password is not to hand. Trading
+    should always pass real credentials so the account is never a surprise.
+    """
+
+    login: int = 0
+    password: str = ""
+    server: str = ""
     path: Optional[str] = None
+
+    @property
+    def attach_only(self) -> bool:
+        return not (self.login and self.password and self.server)
 
 
 @contextmanager
 def connect(creds: MT5Credentials) -> Iterator[object]:
     mt5 = _mt5()
-    init_kwargs: dict = {
-        "login": creds.login,
-        "password": creds.password,
-        "server": creds.server,
-    }
-    if creds.path:
-        init_kwargs["path"] = creds.path
+    if creds.attach_only:
+        if not creds.path:
+            raise RuntimeError(
+                "no credentials and no path: set MT5_LOGIN/PASSWORD/SERVER, or "
+                "MT5_PATH alone to attach to a terminal that is already logged in"
+            )
+        # No login kwargs: MT5 attaches to the account the terminal already
+        # holds. It must be running and logged in - there is nothing here to
+        # log it in with.
+        init_kwargs: dict = {"path": creds.path}
+    else:
+        init_kwargs = {
+            "login": creds.login,
+            "password": creds.password,
+            "server": creds.server,
+        }
+        if creds.path:
+            init_kwargs["path"] = creds.path
 
     initialized = False
     last_err = None
