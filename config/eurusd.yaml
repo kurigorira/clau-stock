@@ -1,0 +1,13 @@
+# Inherits defaults from src/gold_trader/config.py.
+# See config/example.yaml for the full list of tunable parameters.
+
+symbol: EURUSD
+timeframe: H1
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260511
+  deviation_points: 10
+  comment: "eurusd_breakout"

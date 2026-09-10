@@ -1,0 +1,11 @@
+# Silver (XAGUSD). Inherits defaults from src/gold_trader/config.py.
+symbol: XAGUSD
+timeframe: H1
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260519
+  deviation_points: 20
+  comment: "xagusd_breakout"

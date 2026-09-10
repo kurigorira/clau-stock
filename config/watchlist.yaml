@@ -1,0 +1,23 @@
+# Price-change alert watchlist.
+#
+# scripts/run_alerts.py polls each symbol on M1 bars every poll_seconds and
+# emails NOTIFY_TO when the last `window_minutes` close-to-close move exceeds
+# ±threshold_pct. Each symbol is throttled to one email per throttle_sec.
+#
+# The 13 trading presets (BTC, EURUSD, USDJPY, XAUUSD, XAGUSD, COPPER, CL-OIL,
+# NVIDIA, NVIDIA.24H, JPN225ft, HK50, SP500ft, EURUSD-small) are always
+# watched -- their `symbol:` fields are read from the per-symbol YAMLs in
+# config/. List additional symbols below to monitor things you are NOT
+# auto-trading (e.g. equities you only watch).
+
+threshold_pct: 2.0           # |change| >= this -> email
+window_minutes: 10           # close vs close N minutes ago
+poll_seconds: 30             # how often to refresh M1 bars per symbol
+throttle_sec: 1800           # 30-minute cooldown per symbol
+
+# Symbols to monitor IN ADDITION to the 13 trading presets.
+# Use whatever name your broker exposes (check MT5 Market Watch). Leave the
+# list empty to only watch the 13 trading presets.
+extra_symbols: []
+  # - GOOGL
+  # - AAPL

@@ -1,0 +1,38 @@
+# MACD cross + stochastic confirmation + H4 trend filter (both gates on).
+# A/B partner of macd_example.yaml. NOT launched by start.bat.
+symbol: XAUUSD
+timeframe: H1
+strategy: macd
+
+macd:
+  fast: 12
+  slow: 26
+  signal: 9
+  use_h4_filter: true
+
+stoch:
+  use: true
+  k: 14
+  d: 3
+  smooth: 3
+  overbought: 80.0
+  oversold: 20.0
+
+risk:
+  per_trade_pct: 0.3
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  adx_min: 25.0
+  atr_pct_min: 0.001
+  atr_pct_max: 0.10
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0
+
+execution:
+  magic_number: 20260804
+  deviation_points: 20
+  comment: "macd_stoch_h4"

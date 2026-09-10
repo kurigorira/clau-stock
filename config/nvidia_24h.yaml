@@ -1,0 +1,11 @@
+# NVIDIA 24-hour stock CFD. Inherits defaults from src/gold_trader/config.py.
+symbol: NVIDIA.24H
+timeframe: H1
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260514
+  deviation_points: 30
+  comment: "nvda24h_breakout"
