@@ -166,3 +166,35 @@ def test_reversal_costs_reduce_every_day():
     paid, _ = cross_sectional_reversal(frames, cost_bp=5.0)
     assert free.mean - paid.mean == pytest.approx(2 * 5.0 / 10_000)
     assert paid.n == free.n
+
+
+# --- session bounds ---------------------------------------------------------
+
+def test_session_bounds_change_which_move_is_which():
+    """Without bounds the whole UTC day is 'intraday' and 'overnight' is the
+    sliver between days - the opposite of what the split is meant to measure."""
+    from datetime import time
+
+    # cash session 14:00-16:00 rises; the extended hours after it fall back
+    idx, o, c = [], [], []
+    for d in pd.bdate_range("2026-03-02", periods=20, tz="UTC"):
+        for hour, op, cl in ((14, 100.0, 103.0),      # cash session: +3
+                             (16, 103.0, 100.0)):     # after hours: -3
+            idx.append(d + pd.Timedelta(hours=hour))
+            o.append(op)
+            c.append(cl)
+    df = pd.DataFrame({"open": o, "high": [max(a, b) for a, b in zip(o, c)],
+                       "low": [min(a, b) for a, b in zip(o, c)], "close": c,
+                       "volume": 1}, index=pd.DatetimeIndex(idx))
+
+    scoped = session_frame(df, (time(14, 0), time(15, 0)))
+    assert scoped["intraday"].iloc[0] == pytest.approx(3 / 100)
+
+    whole_day = session_frame(df)
+    assert whole_day["intraday"].iloc[0] == pytest.approx(0.0)   # 100 -> 100
+
+
+def test_bounds_that_match_nothing_yield_no_sessions():
+    from datetime import time
+    df = _sessions(closes=[100, 101], opens=[100, 101])
+    assert session_frame(df, (time(2, 0), time(3, 0))).empty

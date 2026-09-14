@@ -85,6 +85,7 @@ def main() -> None:
 
     cfgs = [Config.from_yaml(x) for x in expand_paths(args.configs)]
     frames: dict = {}
+    sessions: dict = {}
     for cfg in cfgs:
         csv = _csv_for(cfg.symbol)
         if csv is None:
@@ -92,6 +93,9 @@ def main() -> None:
         df = load_csv(csv)
         if len(df) >= 100:
             frames[cfg.symbol] = df
+            # the cash session the fleet already trades - without it the split
+            # groups raw UTC days and measures almost nothing
+            sessions[cfg.symbol] = (cfg.session.start_utc, cfg.session.end_utc)
     if len(frames) < 4:
         sys.stderr.write("need at least 4 symbols with dumped data - "
                          "run scripts/dump_history.py first\n")
@@ -103,10 +107,13 @@ def main() -> None:
     print()
 
     # ---- 1. overnight vs intraday -----------------------------------------
-    print("1. OVERNIGHT vs INTRADAY  (per-session legs, pooled over symbols)")
+    a_sess = next(iter(sessions.values()))
+    print(f"1. OVERNIGHT vs INTRADAY  (cash session "
+          f"{a_sess[0].strftime('%H:%M')}-{a_sess[1].strftime('%H:%M')} UTC, "
+          f"pooled over symbols)")
     print(f"  {'':<12} {'n':>7} {'mean bp':>10} {'win %':>8} {'t':>8} {'sharpe':>8}")
     for cost in COSTS:
-        over, intra, _ = overnight_intraday(frames, cost_bp=cost)
+        over, intra, _ = overnight_intraday(frames, cost_bp=cost, sessions=sessions)
         bar = expected_max_sharpe(args.trials, over.n)
         print(f"  --- {cost:g}bp per side (bar for {args.trials} trials: "
               f"sharpe {bar:.2f}) ---")

@@ -96,15 +96,27 @@ def expected_max_sharpe(n_trials: int, n_obs: int, periods_per_year: float = 252
     return sigma * ((1.0 - _EULER) * a + _EULER * b)
 
 
-def session_frame(df: pd.DataFrame) -> pd.DataFrame:
+def session_frame(df: pd.DataFrame, session=None) -> pd.DataFrame:
     """One row per session: its open, its close, and the two return legs.
 
-    A session is a UTC calendar day of bars, which is what a US-stock CFD's
-    H1 series gives. `overnight` pairs this session's close with the NEXT
-    session's open, so the last row has none.
+    `session` is (start_utc, end_utc) as datetime.time - the hours the
+    instrument's cash session actually covers. Passing it is what makes the
+    split mean anything: these CFDs quote outside the cash session, so
+    grouping a raw UTC day puts nearly the whole 24 hours into "intraday" and
+    leaves "overnight" measuring an hour of nothing. With the bounds given,
+    intraday is open-to-close and overnight is close-to-next-open, which is
+    the exposure a position actually carries between sessions.
+
+    Without it the split still runs, on UTC days, and means much less.
     """
     if df.empty:
         return pd.DataFrame(columns=["open", "close", "intraday", "overnight"])
+    if session is not None:
+        start, end = session
+        t = df.index.time
+        df = df[(t >= start) & (t <= end)]
+        if df.empty:
+            return pd.DataFrame(columns=["open", "close", "intraday", "overnight"])
     g = df.groupby(df.index.normalize())
     out = pd.DataFrame({"open": g["open"].first(), "close": g["close"].last()})
     out = out[(out["open"] > 0) & (out["close"] > 0)]
@@ -113,7 +125,8 @@ def session_frame(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def overnight_intraday(frames: dict[str, pd.DataFrame], cost_bp: float = 0.0):
+def overnight_intraday(frames: dict[str, pd.DataFrame], cost_bp: float = 0.0,
+                       sessions: dict | None = None):
     """Pooled overnight and intraday legs across symbols, net of a round trip.
 
     `cost_bp` is charged per side, so each leg pays it twice - entering and
@@ -124,7 +137,7 @@ def overnight_intraday(frames: dict[str, pd.DataFrame], cost_bp: float = 0.0):
     intra: list[float] = []
     rows: list[tuple[str, float, float, int]] = []
     for symbol, df in frames.items():
-        s = session_frame(df)
+        s = session_frame(df, (sessions or {}).get(symbol))
         if s.empty:
             continue
         o = (s["overnight"].dropna() - cost).tolist()
