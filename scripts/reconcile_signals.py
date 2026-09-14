@@ -88,8 +88,16 @@ def _live_entries(creds: MT5Credentials, since: datetime, owned: set[tuple[str, 
 
 
 def _backtest_signals(cfgs: list[Config], since: datetime, slippage_bp: float):
+    """Signals, plus the last bar the dumped data actually reaches.
+
+    That end date is not a detail: the live account keeps trading after the
+    CSVs were dumped, and every entry past their end has no signal to match
+    simply because the backtest cannot see those bars. Reported so the caller
+    can cut the comparison there instead of calling it a disagreement.
+    """
     signals: list[Signal] = []
     used, skipped = 0, []
+    data_end: datetime | None = None
     for cfg in cfgs:
         csv = _csv_for(cfg.symbol)
         if csv is None:
@@ -99,6 +107,10 @@ def _backtest_signals(cfgs: list[Config], since: datetime, slippage_bp: float):
         if len(df) < MIN_BARS:
             skipped.append(cfg.symbol)
             continue
+        last = df.index.max().to_pydatetime()
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        data_end = last if data_end is None else max(data_end, last)
         slip = float(df["close"].median()) * slippage_bp / 10_000.0
         res = run_backtest(df, cfg, slippage_price=slip)
         used += 1
@@ -110,7 +122,7 @@ def _backtest_signals(cfgs: list[Config], since: datetime, slippage_bp: float):
                 signals.append(
                     Signal(symbol=cfg.symbol, side=t.side, bar_time=bar_time)
                 )
-    return signals, used, skipped
+    return signals, used, skipped, data_end
 
 
 def main() -> None:
@@ -169,7 +181,16 @@ def main() -> None:
         since = min(e.time for e in live).replace(minute=0, second=0, microsecond=0)
 
     live = [e for e in live if e.time >= since]
-    signals, used, skipped = _backtest_signals(cfgs, since, args.slippage_bp)
+    signals, used, skipped, data_end = _backtest_signals(cfgs, since, args.slippage_bp)
+
+    # Cut the comparison where the dumped data stops. Live entries past that
+    # point have nothing to match against and would read as disagreement.
+    dropped = 0
+    if data_end is not None:
+        cutoff = data_end + timedelta(hours=2)   # a fill may trail its bar
+        after = [e for e in live if e.time > cutoff]
+        dropped = len(after)
+        live = [e for e in live if e.time <= cutoff]
 
     print(f"signal reconciliation - account {args.account}")
     print(f"fleet: {len(cfgs)} configs, strategy '{cfgs[0].strategy}'")
@@ -178,6 +199,17 @@ def main() -> None:
     print(f"backtest ran on {used}/{len(cfgs)} symbols"
           + (f"; skipped {len(skipped)} without usable data" if skipped else ""))
     print(f"fill allowed {1}-{1 + max(0, args.slack_bars)} bars after the signal bar")
+    if data_end is not None:
+        print(f"dumped data ends {data_end:%Y-%m-%d %H:%M} UTC")
+    if dropped:
+        print(f"  EXCLUDED {dropped} live entries past that point - the backtest")
+        print(f"  has no bars there. Re-run scripts/dump_history.py to include them.")
+    if not live:
+        print()
+        print("every live entry is past the dumped data; nothing left to compare.")
+        print("Run: python scripts/dump_history.py --account "
+              f"{args.account} --months 6 {' '.join(args.configs)}")
+        return
     print()
     print(format_reconciliation(
         match_signals(signals, live, slack_bars=args.slack_bars)
