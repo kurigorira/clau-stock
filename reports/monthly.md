@@ -1,6 +1,6 @@
 # Monthly operating statistics
 
-Generated 2026-09-14 23:23 JST from live MT5 account history (`scripts/monthly_report.py --markdown`).
+Generated 2026-09-14 23:24 JST from live MT5 account history (`scripts/monthly_report.py --markdown`).
 
 One closed **position** counts as one trade (partial closes collapse) and its PnL includes commission and swap on every deal of the position. Months are JST calendar months; a month with no trades is shown as a zero row. Deposits and withdrawals are reported separately from trading PnL, so a funded month cannot read as a winning one. All amounts in JPY.
 
