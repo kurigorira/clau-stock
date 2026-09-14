@@ -36,6 +36,25 @@ class Trade:
     bars_held: int = 0
 
 
+def _fill_price(data: pd.DataFrame, i: int, ref: float, entry_fill: str) -> float | None:
+    """What the entry actually costs, given when the order can be sent.
+
+    "close" is the historical assumption: the signal bar's own close. The live
+    bot cannot achieve it - it only sees the bar once the bar has closed, then
+    sends a market order - so "next_open" fills at the following bar's open
+    instead, which is the first price actually reachable. The stop stays
+    anchored to the signal bar's close either way, exactly as live: that is the
+    whole point, since a worse fill against a fixed stop leaves less room.
+
+    None when there is no next bar to fill on.
+    """
+    if entry_fill == "close":
+        return ref
+    if i + 1 >= len(data):
+        return None
+    return float(data.iloc[i + 1]["open"])
+
+
 def _breadth_map(cfg: Config, breadth: "pd.Series | None") -> "dict | None":
     """dict {timestamp: net breadth} when the regime gate is active, else None.
 
@@ -52,8 +71,14 @@ def run_backtest(
     *,
     slippage_price: float = 0.0,
     breadth: "pd.Series | None" = None,
+    entry_fill: str = "close",
 ) -> dict:
     """Bar-by-bar backtest dispatched on cfg.strategy.
+
+    `entry_fill` decides what an entry costs: "close" assumes the signal bar's
+    close (historical, and unreachable live), "next_open" the following bar's
+    open, which is the first price the live bot can actually get. The stop is
+    anchored to the signal bar's close in both cases, as it is live.
 
     Daily-guard limits (consecutive losses, daily loss cap) are NOT applied
     here — they're enforced live by the executor against the broker account.
@@ -61,12 +86,17 @@ def run_backtest(
     `breadth` is an optional market-breadth series (see breadth.compute_breadth)
     used as a regime gate when cfg.breadth.use is on; it is ignored otherwise.
     """
+    if entry_fill not in ("close", "next_open"):
+        raise ValueError(f"entry_fill must be 'close' or 'next_open', got {entry_fill!r}")
     if cfg.strategy == "fibonacci":
-        return _run_backtest_fib(df, cfg, slippage_price=slippage_price, breadth=breadth)
+        return _run_backtest_fib(df, cfg, slippage_price=slippage_price,
+                                 breadth=breadth, entry_fill=entry_fill)
     if cfg.strategy == "macd":
-        return _run_backtest_macd(df, cfg, slippage_price=slippage_price, breadth=breadth)
+        return _run_backtest_macd(df, cfg, slippage_price=slippage_price,
+                                  breadth=breadth, entry_fill=entry_fill)
     if cfg.strategy in ("kairi", "bollrci"):
-        return _run_backtest_meanrev(df, cfg, slippage_price=slippage_price, breadth=breadth)
+        return _run_backtest_meanrev(df, cfg, slippage_price=slippage_price,
+                                     breadth=breadth, entry_fill=entry_fill)
     bmap = _breadth_map(cfg, breadth)
     data = add_indicators(df, cfg)
     trades: List[Trade] = []
@@ -141,8 +171,11 @@ def run_backtest(
                 and not (cfg.trendline.use and trendline_blocks("buy", bar, cfg))
                 and not (bmap is not None and breadth_blocks("buy", bval, cfg.breadth.min_net))
             ):
+                fill = _fill_price(data, i, close, entry_fill)
+                if fill is None:
+                    continue          # no next bar to fill on
                 side = "buy"
-                entry_price = close + slippage_price
+                entry_price = fill + slippage_price
                 entry_time = bar.name
                 entry_i = i
                 stop = close - stop_mult * atr
@@ -152,8 +185,11 @@ def run_backtest(
                 and not (cfg.trendline.use and trendline_blocks("sell", bar, cfg))
                 and not (bmap is not None and breadth_blocks("sell", bval, cfg.breadth.min_net))
             ):
+                fill = _fill_price(data, i, close, entry_fill)
+                if fill is None:
+                    continue          # no next bar to fill on
                 side = "sell"
-                entry_price = close - slippage_price
+                entry_price = fill - slippage_price
                 entry_time = bar.name
                 entry_i = i
                 stop = close + stop_mult * atr
@@ -167,6 +203,7 @@ def _run_backtest_fib(
     *,
     slippage_price: float = 0.0,
     breadth: "pd.Series | None" = None,
+    entry_fill: str = "close",
 ) -> dict:
     """Fibonacci-strategy backtest over an H1 frame.
 
@@ -253,8 +290,11 @@ def _run_backtest_fib(
                 sig.side, bmap.get(bar.name, float("nan")), cfg.breadth.min_net
             ):
                 continue
+            fill = _fill_price(data, i, sig.entry_ref, entry_fill)
+            if fill is None:
+                continue              # no next bar to fill on
             side = sig.side
-            entry_price = sig.entry_ref + (
+            entry_price = fill + (
                 slippage_price if side == "buy" else -slippage_price
             )
             entry_time = bar.name
@@ -271,6 +311,7 @@ def _run_backtest_macd(
     *,
     slippage_price: float = 0.0,
     breadth: "pd.Series | None" = None,
+    entry_fill: str = "close",
 ) -> dict:
     """MACD-strategy backtest. Entry on the MACD/signal cross (optionally
     gated by the H4 trend), exit on the opposite cross or the ATR stop.
@@ -345,8 +386,11 @@ def _run_backtest_macd(
                 sig.side, bmap.get(bar.name, float("nan")), cfg.breadth.min_net
             ):
                 continue
+            fill = _fill_price(data, i, sig.entry_ref, entry_fill)
+            if fill is None:
+                continue              # no next bar to fill on
             side = sig.side
-            entry_price = sig.entry_ref + (
+            entry_price = fill + (
                 slippage_price if side == "buy" else -slippage_price
             )
             entry_time = bar.name
@@ -362,6 +406,7 @@ def _run_backtest_meanrev(
     *,
     slippage_price: float = 0.0,
     breadth: "pd.Series | None" = None,
+    entry_fill: str = "close",
 ) -> dict:
     """Backtest for the mean-reversion strategies ("kairi", "bollrci").
 
@@ -443,8 +488,11 @@ def _run_backtest_meanrev(
                 sig.side, bmap.get(bar.name, float("nan")), cfg.breadth.min_net
             ):
                 continue
+            fill = _fill_price(data, i, sig.entry_ref, entry_fill)
+            if fill is None:
+                continue              # no next bar to fill on
             side = sig.side
-            entry_price = sig.entry_ref + (
+            entry_price = fill + (
                 slippage_price if side == "buy" else -slippage_price
             )
             entry_time = bar.name

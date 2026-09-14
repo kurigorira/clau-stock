@@ -534,6 +534,39 @@ visible. Deal timestamps come from the broker's server clock, so a trade
 closed within a few hours of a JST month boundary can land in the
 neighboring month — noise at monthly granularity.
 
+## Entry fill — does the edge survive a reachable price?
+
+Every backtest here assumed an entry fills at the **close of the bar that
+produced the signal**. The live bot cannot do that: it only sees the bar once
+the bar has closed, then sends a market order, so it fills at the **next
+bar's open**. The stop is anchored to the signal bar's close either way — so a
+worse fill does not move the stop, it leaves less room in front of it, which
+raises the stop rate and shrinks the winners at the same time.
+
+`run_backtest(..., entry_fill="next_open")` measures that, and
+`scripts/entry_fill_test.py` runs a fleet both ways:
+
+```bash
+python scripts/entry_fill_test.py config/us_fleet/*.yaml
+python scripts/entry_fill_test.py --months 6 config/us_fleet_a4/*.yaml
+```
+
+The default stays `"close"`, so every existing result is unchanged and the two
+runs are directly comparable. Reading it:
+
+- **edge gone at `next_open`** — the strategy was never reachable, and the same
+  question applies to everything else validated under the close-fill
+  assumption (macd, bollrci, and the retired fibonacci/donchian fleets).
+- **edge survives** — the fill is not what the live results are missing; look
+  at `risk.min_stop_fraction` (0.5 admits an entry whose stop distance has
+  been halved, while the size was computed against the full one) and at
+  per-trade costs.
+
+Direction matters when reading the aggregate: a fixed gap costs longs exactly
+what it pays shorts, so a direction-balanced strategy like MACD can show no
+net difference while every individual trade is affected. Live the gap follows
+the signal rather than pointing one fixed way, which is what makes it a cost.
+
 ## Payoff audit — why a validated strategy loses live
 
 `scripts/payoff_audit.py` answers the question a losing month raises: is the
