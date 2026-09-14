@@ -499,11 +499,19 @@ quiet day leaves no empty commit. Register it after the US close:
 
 ```bat
 schtasks /Create /TN "clau-stock publish report" ^
-  /TR "C:\Users\user\clau-stock\scripts\publish_report.bat" /SC DAILY /ST 06:30
+  /TR "C:\Users\user\clau-stock\scripts\publish_report.bat" ^
+  /SC DAILY /ST 06:30 /IT /F
 ```
 
+`/IT` is not optional: without it the task runs outside the logged-on
+session, where the MT5 terminals do not exist and `git push` cannot reach
+the user's credential store. `/F` just replaces an existing registration.
+
 06:30 JST is shortly after the 21:00 UTC close, so each run publishes a
-finished session. The MT5 terminals must be running and logged in (the
+finished session. It rebases onto the remote first — the page can also be
+edited from GitHub's web UI, and committing on top of a stale clone would
+only fail to push — and it pushes the **current branch**, which has to be
+the branch GitHub Pages is serving or the site will not change. The MT5 terminals must be running and logged in (the
 trading bots keep them open). A failed push is retried a few times and
 otherwise left as a local commit for the next run to carry up. Progress
 appends to `logs\publish_report.log`.

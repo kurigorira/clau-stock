@@ -8,7 +8,13 @@ REM
 REM Register it to run daily after the US close (JST 06:30 = shortly after
 REM 21:00 UTC):
 REM   schtasks /Create /TN "clau-stock publish report" ^
-REM     /TR "C:\Users\user\clau-stock\scripts\publish_report.bat" /SC DAILY /ST 06:30
+REM     /TR "C:\Users\user\clau-stock\scripts\publish_report.bat" ^
+REM     /SC DAILY /ST 06:30 /IT /F
+REM
+REM /IT matters: the task must run in the logged-on session. The MT5
+REM terminals only exist there, and git push needs that user's credentials.
+REM It pushes the CURRENT branch, which must be the one GitHub Pages serves
+REM or the site will not change.
 REM
 REM The MT5 terminals must be running and logged in - the trading bots keep
 REM them open. Accounts that cannot be reached are reported in the page as
@@ -24,6 +30,18 @@ if not exist ".venv\Scripts\activate.bat" (
     exit /b 1
 )
 call .venv\Scripts\activate.bat
+
+REM ==== 0. Catch up with the remote first ====
+REM The page can also be changed from GitHub's web UI, which leaves this
+REM clone behind; committing on top of that would only fail to push. Rebase
+REM while the tree is still clean, so there is nothing to conflict with.
+for /f "delims=" %%b in ('git rev-parse --abbrev-ref HEAD') do set "BRANCH=%%b"
+echo [publish_report] branch: %BRANCH% >> logs\publish_report.log
+git pull --rebase >> logs\publish_report.log 2>&1
+if errorlevel 1 (
+    echo [publish_report] git pull --rebase failed - resolve by hand, publishing nothing >> logs\publish_report.log
+    exit /b 1
+)
 
 REM ==== 1. Regenerate both artefacts from live account history ====
 python -u scripts\monthly_report.py --markdown --html >> logs\publish_report.log 2>&1
