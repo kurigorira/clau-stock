@@ -534,6 +534,39 @@ visible. Deal timestamps come from the broker's server clock, so a trade
 closed within a few hours of a JST month boundary can land in the
 neighboring month — noise at monthly granularity.
 
+## Measuring phenomena, not strategies
+
+`scripts/measure_phenomena.py` asks whether an effect exists in this universe
+at all, how big it is, and what survives costs — before anything is built on
+it. It fits no parameter and places no trade.
+
+```bash
+python scripts/measure_phenomena.py config/us_fleet/*.yaml
+python scripts/measure_phenomena.py --lookback 5 --trials 30 config/us_fleet/*.yaml
+```
+
+**Overnight vs intraday.** US equity returns have historically accrued
+between the close and the next open rather than during the session — payment
+for carrying gap risk, not a forecast, which is why being known has not
+removed it. On a CFD the financing charge falls on exactly that window, so
+only the figure net of the swap you actually pay means anything.
+
+**Cross-sectional reversal.** Buying 100 large caps at once is one bet on the
+market wearing the costume of a hundred; that is why the live samples here
+carry far less evidence than their trade counts suggest. Ranking the universe
+and going long the weakest against the strongest cancels the common factor
+and leaves roughly one independent observation per session. The gain is less
+in return than in how fast a real effect can be told from noise.
+
+Both are printed across a cost sweep (0 / 2 / 5 / 10 bp per side), because at
+this horizon the usual honest answer is that the effect is real and the
+spread eats it — and the sweep says where the line falls.
+
+Results are judged against `expected_max_sharpe`, the Sharpe the **best of N
+worthless variants** already reaches on a sample this size, not against zero.
+Pass `--trials` the number of variants this data has judged; after twenty
+looks, beating zero means nothing.
+
 ## Entry fill — does the edge survive a reachable price?
 
 Every backtest here assumed an entry fills at the **close of the bar that
