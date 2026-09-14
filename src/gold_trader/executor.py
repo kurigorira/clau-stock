@@ -253,6 +253,11 @@ class Executor:
         bar_time = closed.index[-1]
         if self._last_bar_time == bar_time:
             return
+        # First bar after a (re)start: the bot has no memory of whether it
+        # already acted on it, and the bar can be nearly an hour old - a stale
+        # entry for a momentum signal, and a second one if the original
+        # position has since closed. Exits and the stop-loss sweep still run.
+        first_after_start = self._last_bar_time is None
         self._last_bar_time = bar_time
 
         data = add_indicators(closed, self.cfg)
@@ -297,6 +302,12 @@ class Executor:
         positions = mt5_client.open_positions(
             self.cfg.symbol, self.cfg.execution.magic_number
         )
+        if first_after_start and signal.side is not None:
+            self.log.info(
+                f"not entering on {bar_time}: first bar after start, the signal "
+                f"may already have been acted on or be up to a bar old"
+            )
+            return
         if signal.side is None or len(positions) >= self.cfg.risk.max_positions:
             return
 
