@@ -141,7 +141,10 @@ def diagnose(live: PayoffStats, back: PayoffStats) -> list[str]:
     ):
         out.append(
             f"live trades close far sooner ({_fmt_hours(live.median_hours)} vs "
-            f"{_fmt_hours(back.median_hours)} median) — winners are being cut short"
+            f"{_fmt_hours(back.median_hours)} median) — but check the per-reason "
+            f"tables before reading anything into it: stops close quickly and "
+            f"signal exits slowly, so a different MIX of the two moves this "
+            f"median on its own"
         )
 
     # The finding that does not depend on sample size: even at the win rate
