@@ -55,8 +55,14 @@ def _csv_for(symbol: str) -> Path | None:
     return None
 
 
-def _live_entries(creds: MT5Credentials, since: datetime, magics: set[int]):
+def _live_entries(creds: MT5Credentials, since: datetime, owned: set[tuple[str, int]]):
     """Opening deals belonging to this fleet, as LiveEntry rows.
+
+    Membership is (symbol, magic), not magic alone: the retired presets
+    occupy magics inside the generated fleets' range, so a magic-only filter
+    pulls their FX trades in and reports them as entries the backtest never
+    produced - which reads exactly like the implementation bug this script
+    exists to detect.
 
     Opening deals - not closed trades - so a position still open counts, and
     the comparison is about what the bot DECIDED, not what has resolved.
@@ -69,7 +75,7 @@ def _live_entries(creds: MT5Credentials, since: datetime, magics: set[int]):
     for d in deals:
         if d.entry != _DEAL_ENTRY_IN or not getattr(d, "symbol", ""):
             continue
-        if magics and d.magic not in magics:
+        if owned and (d.symbol, d.magic) not in owned:
             continue
         t = datetime.fromtimestamp(d.time, tz=timezone.utc)
         if t < since:
@@ -132,7 +138,7 @@ def main() -> None:
     if not cfgs:
         sys.stderr.write("no configs matched\n")
         sys.exit(2)
-    magics = {c.execution.magic_number for c in cfgs}
+    owned = {(c.symbol, c.execution.magic_number) for c in cfgs}
 
     suffix = f"_{args.account}" if args.account else ""
     try:
@@ -147,7 +153,7 @@ def main() -> None:
         sys.exit(2)
 
     window_start = datetime.now(timezone.utc) - timedelta(days=args.days)
-    live = _live_entries(creds, window_start, magics)
+    live = _live_entries(creds, window_start, owned)
     if not live:
         print(f"no live entries with this fleet's magic numbers in the last "
               f"{args.days} days - nothing to reconcile")

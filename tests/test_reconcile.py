@@ -119,3 +119,24 @@ def test_verdict_explains_skipping_without_crying_bug():
 
 def test_verdict_on_empty_window():
     assert "nothing to compare" in format_reconciliation(match_signals([], []))
+
+
+# --- fleet membership -------------------------------------------------------
+
+def test_membership_is_symbol_and_magic_not_magic_alone():
+    """The retired presets hold magics inside the generated fleets' range, so a
+    magic-only filter admits their trades and reports them as entries the
+    backtest never produced - indistinguishable from a real implementation bug.
+    """
+    owned = {("KO", 20260701), ("AAPL", 20260702)}
+    deals = [
+        ("KO", 20260701),        # this fleet's own trade
+        ("GBPUSD", 20260701),    # retired fib preset sharing the magic
+        ("AAPL", 20260702),
+        ("AUDUSD", 20260702),
+    ]
+    kept = [(s, m) for s, m in deals if (s, m) in owned]
+    assert kept == [("KO", 20260701), ("AAPL", 20260702)]
+    # the magic-only rule would have kept all four
+    magics = {m for _, m in owned}
+    assert len([1 for s, m in deals if m in magics]) == 4
