@@ -1,0 +1,28 @@
+# META.24H fibonacci preset — passed the spread-aware screener gate
+# (train PF 1.95/n17, test PF 1.25/n13, spread ~72pt at scan time).
+# Inherits defaults from src/gold_trader/config.py.
+symbol: META.24H
+timeframe: H1
+strategy: fibonacci
+
+risk:
+  per_trade_pct: 0.3
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  atr_pct_min: 0.001
+  atr_pct_max: 0.1
+  adx_min: 25.0
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260761
+  deviation_points: 30
+  comment: "fib_meta_24h"
