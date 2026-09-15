@@ -206,6 +206,9 @@ def symbol_meta(symbol: str) -> dict:
         "volume_max": info.volume_max,
         "volume_step": info.volume_step,
         "stops_level": info.trade_stops_level,
+        # shares (or units) per lot: notional is volume * this * price, which
+        # is what sizing to a target exposure needs rather than to a stop
+        "contract_size": getattr(info, "trade_contract_size", 1.0) or 1.0,
     }
 
 

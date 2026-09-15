@@ -1,42 +1,90 @@
 # clau-stock
 
-Multi-asset auto-trader for **Vantage** via MetaTrader 5. Two strategies —
-`donchian` (breakout) and `fibonacci` (pullback, the current default rollout) —
-with presets for 50 instruments and a tri-account launcher out of the box; any
-MT5 symbol can be added as a new YAML file.
+Multi-account MetaTrader 5 tooling for **Vantage**, and the record of what it
+measured.
 
-> Live trading carries real financial risk. Run on a demo account first, validate
-> with backtests, and only deploy capital you can afford to lose.
+> **The trading bots are stopped.** Four strategies — `donchian`, `fibonacci`,
+> `macd`, `bollrci` — each passed an out-of-sample backtest and each lost
+> live. Over the same window, simply holding the same 100 symbols returned
+> about **+21%** while the macd fleet lost **24%**: a ~45-point gap against
+> doing nothing at all. The book is now equal-weight buy and hold, built by
+> `scripts/buy_and_hold.py`. Everything else here is measurement.
 
-## Built-in presets
+> Live trading carries real financial risk. Run on a demo account first and
+> only deploy capital you can afford to lose.
 
-The fleet was selected by a 6-month donchian-vs-fibonacci backtest
-(`scripts/backtest_all.py`): each launched symbol runs whichever strategy won
-on its own data, and symbols where **both** strategies lost are not launched.
-Preset files are named `fib_<symbol>.yaml` regardless of the strategy inside
-(historical; the file name keys the magic_number and start.bat entries).
+## Buy and hold
 
-`start.bat` launches (current layout, 2026-08 — the US-fleet era):
+```bash
+python scripts/buy_and_hold.py --account 1 config/us_fleet/*.yaml            # plan
+python scripts/buy_and_hold.py --account 1 --exposure 1.0 --execute \
+    config/us_fleet/*.yaml                                                   # send
+```
 
-| account | fleet | strategy |
-|---|---|---|
-| 1 (demo) | `config/us_fleet/*.yaml` — 100 spread-selected US stocks | macd + H4 trend filter (OOS test +276) |
-| 2 (demo) | `config/us_fleet_a2/*.yaml` — same 100 symbols | macd + H4 + stoch 80/20 — live A/B vs account 1 (OOS test +467) |
-| 4 (demo) | `config/us_fleet_a4/*.yaml` — same 100 symbols | bollrci mean reversion, thr=60 (OOS test +502, 56% win) |
-| 3 (LIVE) | none — terminal opens for **manual management only** | **PAUSED** — 12-month train PF 0.32 on EURUSD-small; no bot line by design |
+One equal-weight position per symbol, sized to `exposure × equity` of
+notional, topping up whatever is missing. It refuses to trade without
+`--execute`. There is no exit rule, so there is no loop: run it once, and
+again only to rebalance or after a deposit. Re-running never doubles a
+position and never trims one — selling is a decision to take deliberately.
+
+`--exposure` is the entire risk decision, because **nothing here sets a
+stop**. 1.0 is unlevered and falls with the market; 2.0 falls twice as fast
+and meets a margin call on the way down.
+
+Two costs the sizing cannot remove, and they are the reason to think twice
+about the instrument:
+
+- **Financing.** A CFD is charged swap on the full notional every night it is
+  held. Held forever, that is paid forever — and on leverage above 1.0×. At
+  roughly USD rates + 2–3%, that is a material bite out of a ~21% gross.
+  **A cash share or an ETF pays none of it.** If the aim is simply to own the
+  market, a CFD is an expensive way to do it.
+- **Drawdown.** Without stops the book rides whatever comes.
+
+### Why the strategies stopped
+
+Every one of them was killed by a measurement, not an opinion, and the tools
+that did it are still here: `payoff_audit.py` (is the win rate or the payoff
+wrong?), `reconcile_signals.py` (did the bot take the backtest's trades?),
+`entry_fill_test.py` (does the edge survive a reachable price?),
+`measure_phenomena.py` (does the effect exist at all?), and
+`diag_h4_source.py`.
+
+The bar for restarting any of them is no longer "positive in a backtest". It
+is **"beats holding the same symbols, out of sample, after costs"** — which
+none of the four ever cleared. `measure_phenomena.py --trials N` prints the
+Sharpe the best of N worthless variants already reaches, which is the bar a
+result has to pass; after twenty reuses of one holdout, beating zero means
+nothing.
+
+## The retired fleets
+
+`config/us_fleet*` and the `fib_*.yaml` presets stay in the repo as the
+record of what was tried, and the `us_fleet` symbol list is still what the
+alerts and `buy_and_hold.py` read. **No bot launches them.** What each
+strategy did, and the out-of-sample figure that justified it at the time, is
+documented under *Strategies* below — alongside the live result that
+retired it.
+
+| fleet | strategy | OOS test | live |
+|---|---|---|---|
+| `config/us_fleet` | macd + H4 trend filter | +276 | −24% of the account |
+| `config/us_fleet_a2` | macd + H4 + stoch 80/20 | +467 | no better per trade |
+| `config/us_fleet_a4` | bollrci mean reversion | +502 | −2.5%, never conclusive |
+| `fib_*.yaml` | fibonacci / donchian | — | retired 2026-07 |
 
 `start.bat` opens one terminal per `MT5_PATH_<n>` found in `.env`
 (suffixes 1-9), each at most once, and skips a path already opened under
 another suffix. A manually managed account therefore comes up with the rest
 as soon as its `MT5_PATH_<n>` line exists — nothing in the launcher needs
-editing, and nothing is scanned. Only accounts 1, 2 and 4 get a bot; every
-other terminal opens for manual management.
+editing, and nothing is scanned. No account gets a bot now; every terminal
+opens for manual management.
 
 `.env` has two kinds of entry, and the difference matters:
 
 | entry | opened by `start.bat` | counted as an account |
 |---|---|---|
-| `MT5_PATH_<n>` | yes | **yes** — bots and reports connect to it under suffix `<n>` |
+| `MT5_PATH_<n>` | yes | **yes** — the reports connect to it under suffix `<n>` |
 | `MT5_OPEN_<n>` | yes | no — opened and nothing more |
 
 So a terminal you only want *opened* — a live account you manage by hand —
@@ -61,12 +109,9 @@ shortcut starts a fresh instance on every launch instead of focusing the
 running one, so the windows piled up.
 
 The `us_fleet*` dirs are machine-generated with live spread data
-(`scripts/gen_us_fleet.py`) and are **not** committed — generate them before
-the first launch. `start.bat` refuses to start a bot whose fleet dir is empty.
-
-The fibonacci/donchian fleet described below is the **previous era** and is no
-longer launched by `start.bat`; the presets stay in the repo for reference and
-for adopting any leftover open positions via their magic numbers.
+(`scripts/gen_us_fleet.py`) and are **not** committed. `config/us_fleet` is
+still needed — it is the symbol list the alerts and `buy_and_hold.py` read —
+so generate it before the first run.
 
 The fleet is groomed by the monthly 12-month spread-aware review
 (`scripts/review_fleet.bat`). First review (2026-07) removed 11 symbols
