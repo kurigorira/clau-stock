@@ -1,6 +1,6 @@
 # Monthly operating statistics
 
-Generated 2026-09-17 06:30 JST from live MT5 account history (`scripts/monthly_report.py --markdown`).
+Generated 2026-09-18 06:30 JST from live MT5 account history (`scripts/monthly_report.py --markdown`).
 
 One closed **position** counts as one trade (partial closes collapse) and its PnL includes commission and swap on every deal of the position. Months are JST calendar months; a month with no trades is shown as a zero row. Deposits and withdrawals are reported separately from trading PnL, so a funded month cannot read as a winning one. All amounts in JPY.
 
@@ -8,10 +8,10 @@ One closed **position** counts as one trade (partial closes collapse) and its Pn
 
 | account | months | trades | win % | PF | net PnL |
 |---|---:|---:|---:|---:|---:|
-| 1 (***431) | 5 | 189 | 25.4 | 0.71 | -280,378 |
+| 1 (***431) | 5 | 190 | 25.3 | 0.71 | -284,303 |
 | 2 (***128) | 5 | 161 | 23.6 | 0.88 | -82,567 |
 | 3 (***497) | 6 | 17 | 35.3 | 1.27 | +8,398 |
-| 4 (***565) | 2 | 76 | 36.8 | 0.64 | -3,756 |
+| 4 (***565) | 2 | 77 | 36.4 | 0.63 | -4,002 |
 | 5 (***010) | 2 | 7 | 28.6 | 0.07 | -42,435 |
 
 ## Account 1 (***431)
@@ -22,8 +22,8 @@ One closed **position** counts as one trade (partial closes collapse) and its Pn
 | 2026-06 | 31 | 41.9 | 1.41 | +395,459 | -281,454 | +114,005 | 0 | 977,031 |
 | 2026-07 | 21 | 14.3 | 0.11 | +20,346 | -180,028 | -159,682 | 0 | 817,349 |
 | 2026-08 | 12 | 25.0 | 0.62 | +13,465 | -21,869 | -8,404 | 0 | 808,945 |
-| 2026-09 | 98 | 22.4 | 0.31 | +44,461 | -143,784 | -99,323 | 0 | 709,622 |
-| **total** | **189** | **25.4** | | | | **-280,378** | | **709,622** |
+| 2026-09 | 99 | 22.2 | 0.30 | +44,461 | -147,709 | -103,248 | 0 | 705,697 |
+| **total** | **190** | **25.3** | | | | **-284,303** | | **705,697** |
 
 By strategy:
 
@@ -42,7 +42,7 @@ By strategy:
 | 2026-08 | fibonacci | +1,695 | 4 |
 | 2026-08 | unknown | -15,932 | 5 |
 | 2026-09 | macd | -84,652 | 96 |
-| 2026-09 | unknown | -14,671 | 2 |
+| 2026-09 | unknown | -18,596 | 3 |
 
 ## Account 2 (***128)
 
@@ -97,22 +97,22 @@ By strategy:
 
 | month | trades | win % | PF | gross + | gross - | net | in/out | end balance |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2026-08 | 0 | 0.0 | 0.00 | 0 | 0 | 0 | +100,000 | 99,754 |
-| 2026-09 | 76 | 36.8 | 0.64 | +6,738 | -10,494 | -3,756 | 0 | 95,998 |
-| **total** | **76** | **36.8** | | | | **-3,756** | | **95,998** |
+| 2026-08 | 0 | 0.0 | 0.00 | 0 | 0 | 0 | +100,000 | 100,000 |
+| 2026-09 | 77 | 36.4 | 0.63 | +6,738 | -10,740 | -4,002 | 0 | 95,998 |
+| **total** | **77** | **36.4** | | | | **-4,002** | | **95,998** |
 
 By strategy:
 
 | month | strategy | net | trades |
 |---|---|---:|---:|
-| 2026-09 | bollrci | -3,756 | 76 |
+| 2026-09 | bollrci | -4,002 | 77 |
 
 ## Account 5 (***010)
 
 | month | trades | win % | PF | gross + | gross - | net | in/out | end balance |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2026-08 | 2 | 0.0 | 0.00 | 0 | -14,931 | -14,931 | +15,000 | -7,928 |
-| 2026-09 | 5 | 40.0 | 0.10 | +3,103 | -30,607 | -27,504 | +48,000 | 12,568 |
+| 2026-08 | 2 | 0.0 | 0.00 | 0 | -14,931 | -14,931 | +15,000 | -7,931 |
+| 2026-09 | 5 | 40.0 | 0.10 | +3,103 | -30,607 | -27,504 | +48,003 | 12,568 |
 | **total** | **7** | **28.6** | | | | **-42,435** | | **12,568** |
 
 By strategy:
