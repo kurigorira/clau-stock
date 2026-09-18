@@ -1,0 +1,43 @@
+# Account 3 (live, ~JPY 20,000) EURUSD-only preset.
+# Tightened relative to config/eurusd.yaml because a single bad fill on a
+# JPY 20k live account is ~5% of equity. Inherits defaults from
+# src/gold_trader/config.py; only fields below override them.
+
+symbol: EURUSD
+timeframe: H1
+
+trend:
+  ema_length: 200
+  ema_slope_lookback: 5         # require a more sustained EMA slope
+
+breakout:
+  donchian_length: 20
+  exit_donchian_length: 10
+  atr_buffer_mult: 0.2          # demand 0.2*ATR push beyond the Donchian high/low
+
+risk:
+  per_trade_pct: 1.0            # ~JPY 200 risk per trade on a JPY 20k account
+  atr_length: 14
+  atr_stop_mult: 1.5             # tighter stop = faster turnover, smaller drawdowns
+  max_positions: 1
+
+filters:
+  adx_length: 14
+  adx_min: 25.0                 # only act on clearly trending bars
+  atr_pct_min: 0.0003           # 0.03%: block dead-flat FX sessions
+  atr_pct_max: 0.005            # 0.5%:  block blowoff bars
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0             # halt for the day at ~JPY 400 realized loss
+
+session:
+  start_utc: "00:00"
+  end_utc: "23:59"
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260523        # unique vs. existing presets (eurusd.yaml uses 20260511)
+  deviation_points: 10
+  poll_seconds: 30
+  comment: "eurusd_small"

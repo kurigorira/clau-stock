@@ -1,0 +1,31 @@
+# MACD strategy with the H4 trend filter (MACD cross must agree with H4).
+# Exploratory preset for comparing against donchian/fibonacci via
+# scripts/backtest_all.py. NOT launched by start.bat.
+symbol: BTCUSD
+timeframe: H1
+strategy: macd
+
+macd:
+  fast: 12
+  slow: 26
+  signal: 9
+  use_h4_filter: true
+
+risk:
+  per_trade_pct: 0.3
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  adx_min: 25.0
+  atr_pct_min: 0.001
+  atr_pct_max: 0.10
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0
+
+execution:
+  magic_number: 20260801
+  deviation_points: 20
+  comment: "macd_h4"
