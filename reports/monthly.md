@@ -1,6 +1,6 @@
 # Monthly operating statistics
 
-Generated 2026-09-18 06:30 JST from live MT5 account history (`scripts/monthly_report.py --markdown`).
+Generated 2026-09-19 06:30 JST from live MT5 account history (`scripts/monthly_report.py --markdown`).
 
 One closed **position** counts as one trade (partial closes collapse) and its PnL includes commission and swap on every deal of the position. Months are JST calendar months; a month with no trades is shown as a zero row. Deposits and withdrawals are reported separately from trading PnL, so a funded month cannot read as a winning one. All amounts in JPY.
 
@@ -8,8 +8,8 @@ One closed **position** counts as one trade (partial closes collapse) and its Pn
 
 | account | months | trades | win % | PF | net PnL |
 |---|---:|---:|---:|---:|---:|
-| 1 (***431) | 5 | 190 | 25.3 | 0.71 | -284,303 |
-| 2 (***128) | 5 | 161 | 23.6 | 0.88 | -82,567 |
+| 1 (***431) | 5 | 193 | 24.9 | 0.71 | -291,381 |
+| 2 (***128) | 5 | 164 | 23.2 | 0.87 | -89,462 |
 | 3 (***497) | 6 | 17 | 35.3 | 1.27 | +8,398 |
 | 4 (***565) | 2 | 77 | 36.4 | 0.63 | -4,002 |
 | 5 (***010) | 2 | 7 | 28.6 | 0.07 | -42,435 |
@@ -22,8 +22,8 @@ One closed **position** counts as one trade (partial closes collapse) and its Pn
 | 2026-06 | 31 | 41.9 | 1.41 | +395,459 | -281,454 | +114,005 | 0 | 977,031 |
 | 2026-07 | 21 | 14.3 | 0.11 | +20,346 | -180,028 | -159,682 | 0 | 817,349 |
 | 2026-08 | 12 | 25.0 | 0.62 | +13,465 | -21,869 | -8,404 | 0 | 808,945 |
-| 2026-09 | 99 | 22.2 | 0.30 | +44,461 | -147,709 | -103,248 | 0 | 705,697 |
-| **total** | **190** | **25.3** | | | | **-284,303** | | **705,697** |
+| 2026-09 | 102 | 21.6 | 0.29 | +44,461 | -154,787 | -110,326 | 0 | 698,619 |
+| **total** | **193** | **24.9** | | | | **-291,381** | | **698,619** |
 
 By strategy:
 
@@ -41,7 +41,7 @@ By strategy:
 | 2026-08 | donchian | +5,833 | 3 |
 | 2026-08 | fibonacci | +1,695 | 4 |
 | 2026-08 | unknown | -15,932 | 5 |
-| 2026-09 | macd | -84,652 | 96 |
+| 2026-09 | macd | -91,730 | 99 |
 | 2026-09 | unknown | -18,596 | 3 |
 
 ## Account 2 (***128)
@@ -52,8 +52,8 @@ By strategy:
 | 2026-06 | 20 | 40.0 | 1.71 | +399,529 | -233,301 | +166,228 | 0 | 907,239 |
 | 2026-07 | 16 | 25.0 | 0.12 | +10,837 | -90,700 | -79,863 | 0 | 827,376 |
 | 2026-08 | 24 | 12.5 | 0.16 | +6,643 | -41,720 | -35,077 | 0 | 792,299 |
-| 2026-09 | 87 | 21.8 | 0.36 | +42,595 | -117,461 | -74,866 | 0 | 717,433 |
-| **total** | **161** | **23.6** | | | | **-82,567** | | **717,433** |
+| 2026-09 | 90 | 21.1 | 0.34 | +42,595 | -124,356 | -81,761 | 0 | 710,538 |
+| **total** | **164** | **23.2** | | | | **-89,462** | | **710,538** |
 
 By strategy:
 
@@ -70,7 +70,7 @@ By strategy:
 | 2026-08 | unknown | -4,045 | 2 |
 | 2026-09 | donchian | -2,456 | 1 |
 | 2026-09 | fibonacci | +4,509 | 2 |
-| 2026-09 | macd | -76,919 | 84 |
+| 2026-09 | macd | -83,814 | 87 |
 
 ## Account 3 (***497)
 
