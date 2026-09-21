@@ -35,7 +35,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gold_trader import mt5_client  # noqa: E402
-from gold_trader.buyhold import plan_targets  # noqa: E402
+from gold_trader.buyhold import BUYHOLD_MAGIC, plan_targets  # noqa: E402
 from gold_trader.cli_util import expand_paths  # noqa: E402
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.mt5_client import (  # noqa: E402
@@ -59,7 +59,7 @@ def main() -> None:
                    help="total notional as a multiple of equity (default 1.0 = "
                         "unlevered). This is the entire risk decision: there are "
                         "no stops")
-    p.add_argument("--magic", type=int, default=20271000,
+    p.add_argument("--magic", type=int, default=BUYHOLD_MAGIC,
                    help="magic number stamped on every position, so the reports "
                         "can tell this book from the retired ones")
     p.add_argument("--execute", action="store_true",

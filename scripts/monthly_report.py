@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from gold_trader import htmlreport, monthly, report  # noqa: E402
+from gold_trader import htmlreport, monthly, mt5_client, report  # noqa: E402
 from gold_trader.monthly import JST, AccountMonthly  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 from gold_trader.notify import _send_via_gmail  # noqa: E402
@@ -57,10 +57,27 @@ def _gather(account_id: str, creds: MT5Credentials, magic_index, start: datetime
             start.astimezone(timezone.utc),
             datetime.now(timezone.utc) + timedelta(hours=1),
         ) or []
+        # A held book realizes nothing, so it never reaches the deal history.
+        # Read it from the open positions or it stays invisible.
+        positions = mt5_client.all_open_positions()
+        sizes: dict[str, float] = {}
+        for symbol in {getattr(p, "symbol", "") for p in positions if getattr(p, "symbol", "")}:
+            try:
+                sizes[symbol] = float(mt5_client.symbol_meta(symbol).get("contract_size") or 0.0)
+            except Exception:  # noqa: BLE001
+                pass  # no size -> notional 0, reported as "-", never guessed
 
     trades, balance_ops = monthly.build_trades(list(deals), magic_index)
     months = monthly.monthly_stats(trades, balance_ops, balance_now=balance)
-    return AccountMonthly(account=account_id, login=login, balance=balance, months=months)
+    open_rows = monthly.build_open_positions(positions, magic_index, sizes)
+    return AccountMonthly(
+        account=account_id,
+        login=login,
+        balance=balance,
+        months=months,
+        open_groups=monthly.group_open(open_rows),
+        drag=monthly.swap_drag(open_rows, datetime.now(JST)) if open_rows else None,
+    )
 
 
 def main() -> None:

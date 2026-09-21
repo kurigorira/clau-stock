@@ -49,6 +49,29 @@ def _account_payload(r: AccountMonthly, mask_logins: bool) -> dict[str, Any]:
     if r.login:
         label = mask_login(r.login) if mask_logins else str(r.login)
 
+    open_groups = [
+        {
+            "strategy": g.strategy,
+            "n": g.positions,
+            "vol": round(g.volume, 2),
+            "unreal": round(g.unrealised),
+            "swap": round(g.swap),
+            "notional": round(g.notional),
+        }
+        for g in r.open_groups
+    ]
+    drag = None
+    if r.drag is not None:
+        drag = {
+            "counted": r.drag.counted,
+            "tooNew": r.drag.too_new,
+            "perDay": round(r.drag.per_day),
+            "annual": round(r.drag.annual),
+            "annualPct": (
+                None if r.drag.annual_pct is None else round(r.drag.annual_pct, 1)
+            ),
+        }
+
     return {
         "id": r.account,
         "mask": label,
@@ -59,6 +82,8 @@ def _account_payload(r: AccountMonthly, mask_logins: bool) -> dict[str, Any]:
         "win": round(100.0 * wins / trades, 1) if trades else 0.0,
         "months": months,
         "byStrategy": by_strategy,
+        "openGroups": open_groups,
+        "drag": drag,
         "error": r.error,
     }
 
@@ -67,8 +92,13 @@ def build_payload(
     reports: list[AccountMonthly], generated_at: str, *, mask_logins: bool = True
 ) -> dict[str, Any]:
     """The JSON the page draws itself from."""
+    # open_groups alone is enough to list an account: a book that only holds
+    # has no closed trades, and dropping it would hide exactly the thing the
+    # open-position section exists to show.
     accounts = [
-        _account_payload(r, mask_logins) for r in reports if r.error is None and r.months
+        _account_payload(r, mask_logins)
+        for r in reports
+        if r.error is None and (r.months or r.open_groups)
     ]
     skipped = [
         {"id": r.account, "error": r.error} for r in reports if r.error is not None
@@ -97,6 +127,14 @@ def build_payload(
             "trades": trades,
             "wins": wins,
             "win": round(100.0 * wins / trades, 1) if trades else 0.0,
+            # realized net above; these are open and still moving
+            "openPositions": sum(
+                g["n"] for a in accounts for g in a["openGroups"]
+            ),
+            "unrealised": sum(
+                g["unreal"] for a in accounts for g in a["openGroups"]
+            ),
+            "swap": sum(g["swap"] for a in accounts for g in a["openGroups"]),
         },
     }
 
@@ -296,6 +334,10 @@ _TEMPLATE = r"""<!doctype html>
     display: block; font-weight: 400; font-size: 0.8rem; color: var(--ink-3);
     font-family: var(--f-mono); margin-top: 0.2rem;
   }
+  .table-wrap .note {
+    margin: 0; padding: 0.75rem 1.3rem 1.1rem; font-size: 0.8rem;
+    line-height: 1.7; color: var(--ink-2); border-top: 1px solid var(--rule);
+  }
   th, td { padding: 0.5rem 0.85rem; text-align: right; white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; }
   .t-strat th:nth-child(2), .t-strat td:nth-child(2) { text-align: left; }
@@ -453,6 +495,12 @@ _TEMPLATE = r"""<!doctype html>
 
   /* role = dominant strategy of the most recent month that traded */
   function roleOf(a) {
+    /* What the account IS now, which is not always what it last closed: a
+       held book closes nothing, so going by closed trades alone would keep
+       labelling it with the strategy it stopped running. */
+    var og = a.openGroups || [], open = null;
+    og.forEach(function (g) { if (!open || g.n > open.n) { open = g; } });
+    if (open) { return open.strategy + "（保有中）"; }
     var best = null;
     a.byStrategy.forEach(function (r) {
       if (!best || r[0] > best[0] || (r[0] === best[0] && r[3] > best[3])) { best = r; }
@@ -575,6 +623,30 @@ _TEMPLATE = r"""<!doctype html>
         });
       }
     }
+
+    /* A held book realizes nothing, so every table above reads "0 trades"
+       while financing is charged nightly. Say what it costs per year. */
+    D.accounts.forEach(function (a) {
+      if (!a.drag || a.drag.counted === 0 || a.drag.annual >= 0) { return; }
+      var pct = a.drag.annualPct;
+      var vs = "";
+      if (a.balance > 0) {
+        vs = "現在残高の <strong>" +
+             Math.abs(a.drag.annual / a.balance * 100).toFixed(1) +
+             "%／年</strong> に相当します。";
+      }
+      out.push({
+        flag: "コスト", cls: "flag--check",
+        title: "口座 " + esc(a.id) + " の保有コスト（スワップ）は年 " + yen(a.drag.annual),
+        body: "保有中の建玉に対し <strong>" + yen(a.drag.perDay) + "／日</strong> の" +
+              "金利が発生しています" +
+              (pct === null ? "" : "（想定元本の <strong>" +
+                Math.abs(pct).toFixed(1) + "%／年</strong>）") + "。" + vs +
+              "これは相場が横ばいでも毎晩差し引かれる確定費用で、" +
+              "現物株やETFでは発生しません。買って持つだけが目的なら、" +
+              "CFDはこの分だけ不利な器です。"
+      });
+    });
 
     if (!out.length) {
       out.push({ flag: "指摘なし", cls: "flag--ok", title: "自動チェックの該当なし",
@@ -699,6 +771,19 @@ _TEMPLATE = r"""<!doctype html>
         filter: "H4トレンドフィルタ",
         shape: "検証段階の戦略です"
       },
+      buyhold: {
+        kind: "売買しない（保有）",
+        summary: "対象銘柄を等金額で買い、そのまま持ち続けます。シグナルも損切りもなく、" +
+                 "ボットは動いていません。検証で「同じ銘柄を持っているだけ」の成績が" +
+                 "各戦略を上回ったため、これを基準そのものとして採用した状態です。",
+        entry: "1回だけ。各銘柄に「exposure×有効証拠金÷銘柄数」を割り当て、" +
+               "ロット刻みは切り捨て（買いすぎない方向に丸める）",
+        exit: "なし。決済しない限り損益は確定しません",
+        filter: "なし",
+        shape: "取引数は増えないため、上の勝率・PFの表には現れません。" +
+               "実質的なコストは毎晩のスワップ（金利）で、これは相場が横ばいでも" +
+               "差し引かれます。現物株やETFでは発生しない費用です"
+      },
       manual: {
         kind: "自動売買ではない",
         summary: "ボットが出したものではない取引。手動で建てたポジション、またはボットのマジックナンバーと一致しない取引がここに入ります。",
@@ -716,7 +801,21 @@ _TEMPLATE = r"""<!doctype html>
     };
 
     var host = document.getElementById("strategy-notes");
-    var cards = D.strategies.map(function (s) {
+    /* D.strategies is built from CLOSED trades, so a held book never reaches
+       it. Append those separately - with unrealised PnL, clearly labelled as
+       unrealised - rather than feeding 0 into the realized-PnL chart. */
+    var listed = D.strategies.slice();
+    var seen = {};
+    listed.forEach(function (s) { seen[s.name] = true; });
+    D.accounts.forEach(function (a) {
+      (a.openGroups || []).forEach(function (g) {
+        if (seen[g.strategy]) { return; }
+        seen[g.strategy] = true;
+        listed.push({ name: g.strategy, net: g.unreal, n: g.n, held: true });
+      });
+    });
+
+    var cards = listed.map(function (s) {
       var note = NOTES[s.name];
       if (!note) {
         note = { kind: "詳細未登録", summary: "この戦略の説明はレポート側に登録されていません。",
@@ -725,7 +824,8 @@ _TEMPLATE = r"""<!doctype html>
       return '<div class="strat-card">' +
         '<div class="sc-head"><span class="sc-name">' + esc(s.name) + "</span>" +
         '<span class="sc-kind">' + esc(note.kind) + "</span>" +
-        '<span class="sc-pnl ' + sc(s.net) + '">' + yen(s.net) + " ／ " + s.n + "件</span></div>" +
+        '<span class="sc-pnl ' + sc(s.net) + '">' + yen(s.net) +
+          (s.held ? "（評価）／ 建玉" : " ／ ") + s.n + "件</span></div>" +
         "<p>" + esc(note.summary) + "</p>" +
         "<dl>" +
           "<dt>仕掛け</dt><dd>" + esc(note.entry) + "</dd>" +
@@ -821,6 +921,45 @@ _TEMPLATE = r"""<!doctype html>
         "</span></caption><thead><tr><th>月</th><th>戦略</th><th>ネット</th><th>取引</th></tr></thead><tbody>" +
         (strat || '<tr><td colspan="4">記録なし</td></tr>') + "</tbody></table>";
       host.appendChild(sw);
+
+      /* Open book: realizes nothing, so none of it appears above. Without
+         this, a buy-and-hold account reads as "0 trades" while swap runs. */
+      var og = a.openGroups || [];
+      if (og.length) {
+        var orows = og.map(function (g) {
+          return "<tr><td>" + esc(g.strategy) + "</td><td>" + g.n + "</td><td>" +
+            g.vol.toFixed(2) + '</td><td class="' + sc(g.unreal) + '">' + yen(g.unreal) +
+            '</td><td class="' + sc(g.swap) + '">' + yen(g.swap) + "</td><td>" +
+            (g.notional > 0 ? "¥" + g.notional.toLocaleString("en-US") : "—") +
+            "</td></tr>";
+        }).join("");
+        var note = "";
+        if (a.drag) {
+          if (a.drag.counted === 0) {
+            note = "建玉" + a.drag.tooNew + "件はまだロールオーバーを経ていないため、" +
+              "スワップ負担は測定できません。";
+          } else {
+            note = "金利負担：<b>" + yen(a.drag.perDay) + "／日</b> → <b>" +
+              yen(a.drag.annual) + "／年</b>" +
+              (a.drag.annualPct === null ? "" :
+                "（想定元本の<b>" + Math.abs(a.drag.annualPct).toFixed(1) +
+                "%／年</b>）") +
+              "。1日以上保有の" + a.drag.counted + "件から算出" +
+              (a.drag.tooNew ? "、" + a.drag.tooNew + "件は新しすぎて対象外" : "") +
+              "。CFDは保有した夜ごとにこれを払います（現物株・ETFは払いません）。";
+          }
+        }
+        var ow = document.createElement("div");
+        ow.className = "table-wrap";
+        ow.innerHTML =
+          '<table><caption>　└ 保有中の建玉（上の表には未計上）<span class="sub">' +
+          "決済していないため損益は未確定／口座" + esc(a.id) +
+          "</span></caption><thead><tr><th>戦略</th><th>建玉</th><th>数量</th>" +
+          "<th>評価損益</th><th>うちスワップ</th><th>想定元本</th></tr></thead><tbody>" +
+          orows + "</tbody></table>" +
+          (note ? '<p class="note">' + note + "</p>" : "");
+        host.appendChild(ow);
+      }
     });
   })();
 })();

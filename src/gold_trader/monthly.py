@@ -99,16 +99,87 @@ class MonthStats:
 
 
 @dataclass
+class OpenPosition:
+    """One position still open, with the two numbers a closed trade hides."""
+    symbol: str
+    magic: int
+    strategy: str
+    volume: float
+    opened: datetime | None
+    profit: float          # floating PnL, MT5 reports this WITHOUT swap
+    swap: float            # financing paid so far; negative is a cost
+    notional: float = 0.0  # volume * contract_size * current price
+
+    @property
+    def unrealised(self) -> float:
+        """What closing right now would add to the balance."""
+        return self.profit + self.swap
+
+    def days_held(self, now: datetime) -> float | None:
+        if self.opened is None:
+            return None
+        return max(0.0, (now - self.opened).total_seconds() / 86400.0)
+
+
+@dataclass
+class OpenGroup:
+    """Open positions of one strategy, added up."""
+    strategy: str
+    positions: int = 0
+    volume: float = 0.0
+    profit: float = 0.0
+    swap: float = 0.0
+    notional: float = 0.0
+    oldest: datetime | None = None
+
+    @property
+    def unrealised(self) -> float:
+        return self.profit + self.swap
+
+
+@dataclass
+class SwapDrag:
+    """The nightly financing cost, annualised.
+
+    Swap is charged at rollover, so a position opened a few hours ago has
+    paid nothing yet and would drag the average toward zero. Those are
+    counted separately (`too_new`) rather than averaged in - the same rule
+    the payoff audit uses: say what the number covers, or don't print it.
+    """
+    counted: int = 0
+    too_new: int = 0
+    notional: float = 0.0
+    per_day: float = 0.0  # JPY/day over the counted positions; negative = cost
+
+    @property
+    def annual(self) -> float:
+        return self.per_day * 365.0
+
+    @property
+    def annual_pct(self) -> float | None:
+        """Annual financing as a % of the notional it is charged on."""
+        if self.notional <= 0:
+            return None
+        return 100.0 * self.annual / self.notional
+
+
+@dataclass
 class AccountMonthly:
     account: str
     login: int = 0
     balance: float = 0.0
     months: list[MonthStats] = field(default_factory=list)  # chronological
     error: str | None = None
+    # Open book: empty list means "none open", which is not the same as the
+    # terminal never having been asked.
+    open_groups: list[OpenGroup] = field(default_factory=list)
+    drag: SwapDrag | None = None
 
 
 def build_trades(
-    deals: list[Any], magic_index: dict[int, Config], tz: timezone = JST
+    deals: list[Any],
+    magic_index: dict[tuple[str, int], Config],
+    tz: timezone = JST,
 ) -> tuple[list[TradeRow], list[Any]]:
     """(closed trades, balance-operation deals) from raw MT5 deals.
 
@@ -211,6 +282,85 @@ def monthly_stats(
     return months
 
 
+def build_open_positions(
+    positions: list[Any],
+    magic_index: dict[tuple[str, int], Config],
+    contract_sizes: dict[str, float] | None = None,
+    tz: timezone = JST,
+) -> list[OpenPosition]:
+    """Raw MT5 positions -> OpenPosition rows.
+
+    Positions need .symbol, .magic, .volume, .time (unix seconds), .profit,
+    .swap and .price_current. `contract_sizes` maps symbol -> contract size;
+    a symbol missing from it gets notional 0 rather than a guessed size,
+    because a wrong contract size is wrong by whatever factor the broker uses.
+    """
+    sizes = contract_sizes or {}
+    out: list[OpenPosition] = []
+    for p in positions:
+        symbol = getattr(p, "symbol", "") or ""
+        if not symbol:
+            continue  # balance entries are not positions
+        magic = int(getattr(p, "magic", 0) or 0)
+        opened = None
+        raw_time = getattr(p, "time", None)
+        if raw_time:
+            opened = datetime.fromtimestamp(int(raw_time), tz=tz)
+        volume = float(getattr(p, "volume", 0.0) or 0.0)
+        size = float(sizes.get(symbol) or 0.0)
+        price = float(getattr(p, "price_current", 0.0) or 0.0)
+        out.append(
+            OpenPosition(
+                symbol=symbol,
+                magic=magic,
+                strategy=strategy_of(symbol, magic, magic_index),
+                volume=volume,
+                opened=opened,
+                profit=float(getattr(p, "profit", 0.0) or 0.0),
+                swap=float(getattr(p, "swap", 0.0) or 0.0),
+                notional=volume * size * price if size > 0 and price > 0 else 0.0,
+            )
+        )
+    return out
+
+
+def group_open(positions: list[OpenPosition]) -> list[OpenGroup]:
+    """Open positions summed per strategy, alphabetical."""
+    groups: dict[str, OpenGroup] = {}
+    for p in positions:
+        g = groups.setdefault(p.strategy, OpenGroup(strategy=p.strategy))
+        g.positions += 1
+        g.volume += p.volume
+        g.profit += p.profit
+        g.swap += p.swap
+        g.notional += p.notional
+        if p.opened is not None and (g.oldest is None or p.opened < g.oldest):
+            g.oldest = p.opened
+    return [groups[k] for k in sorted(groups)]
+
+
+def swap_drag(
+    positions: list[OpenPosition], now: datetime, *, min_days: float = 1.0
+) -> SwapDrag:
+    """Financing cost per day, from positions old enough to have paid it.
+
+    Each position's swap so far divided by the days it has been held is its
+    daily rate; the book's rate is the sum. Positions younger than `min_days`
+    have not been through a rollover, so including them would understate the
+    cost - they are counted in `too_new` instead.
+    """
+    drag = SwapDrag()
+    for p in positions:
+        held = p.days_held(now)
+        if held is None or held < min_days:
+            drag.too_new += 1
+            continue
+        drag.counted += 1
+        drag.notional += p.notional
+        drag.per_day += p.swap / held
+    return drag
+
+
 def _money(x: float) -> str:
     # ASCII on purpose - see report._money (cp932 consoles).
     sign = "+" if x >= 0 else ""
@@ -235,6 +385,9 @@ def format_monthly_report(reports: list[AccountMonthly], generated_at: str) -> s
             continue
         if not r.months:
             lines.append("  no closed trades or balance operations in the window")
+            # a book that only holds closes nothing - that is the whole point
+            # of the open section, so it must survive this early exit
+            lines.extend(_open_book_lines(r))
             lines.append("")
             continue
 
@@ -267,8 +420,43 @@ def format_monthly_report(reports: list[AccountMonthly], generated_at: str) -> s
         if strat_lines:
             lines.append("  by strategy:")
             lines.extend(strat_lines)
+        lines.extend(_open_book_lines(r))
         lines.append("")
     return "\n".join(lines)
+
+
+def _drag_sentence(d: SwapDrag) -> str:
+    """One line on what the financing costs, or why it cannot be said yet."""
+    if d.counted == 0:
+        return (
+            f"    financing: not measurable yet - all {d.too_new} position(s) "
+            f"are younger than a rollover"
+        )
+    pct = d.annual_pct
+    rate = f" = {pct:+.1f}%/yr of notional" if pct is not None else ""
+    tail = f" ({d.too_new} too new to count)" if d.too_new else ""
+    return (
+        f"    financing: {_money(d.per_day)}/day, {_money(d.annual)}/yr{rate}"
+        f", over {d.counted} position(s){tail}"
+    )
+
+
+def _open_book_lines(r: AccountMonthly) -> list[str]:
+    if not r.open_groups:
+        return []
+    lines = [
+        "  open positions (not in the rows above - nothing is realized yet):",
+        "    strategy     pos      volume  unrealised      of which swap   notional",
+    ]
+    for g in r.open_groups:
+        lines.append(
+            f"    {g.strategy:<10} {g.positions:>4}  {g.volume:>10.2f}"
+            f"  {_money(g.unrealised):>13}  {_money(g.swap):>13}"
+            f"  {'-' if g.notional <= 0 else f'JPY {g.notional:,.0f}'}"
+        )
+    if r.drag is not None:
+        lines.append(_drag_sentence(r.drag))
+    return lines
 
 
 def mask_login(login: int) -> str:
@@ -343,6 +531,8 @@ def format_monthly_markdown(
             continue
         if not r.months:
             out += ["No closed trades or balance operations in the window.", ""]
+            # a held book realizes nothing, so this is exactly where it lives
+            out += _open_book_markdown(r)
             continue
 
         out += [
@@ -384,7 +574,55 @@ def format_monthly_markdown(
             ]
             out.append("")
 
+        out += _open_book_markdown(r)
+
     return "\n".join(out)
+
+
+def _open_book_markdown(r: AccountMonthly) -> list[str]:
+    """The open book as Markdown, or nothing when the account holds nothing."""
+    if not r.open_groups:
+        return []
+
+    def _num(x: float) -> str:
+        sign = "+" if x > 0 else ""
+        return f"{sign}{x:,.0f}"
+
+    out = [
+        "Open positions — **not** counted in the tables above, because "
+        "nothing has been realized yet:",
+        "",
+        "| strategy | positions | volume | unrealised | of which swap | notional |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for g in r.open_groups:
+        out.append(
+            f"| {g.strategy} | {g.positions} | {g.volume:,.2f} | "
+            f"{_num(g.unrealised)} | {_num(g.swap)} | "
+            f"{'—' if g.notional <= 0 else f'{g.notional:,.0f}'} |"
+        )
+    out.append("")
+    if r.drag is not None:
+        out += [_drag_markdown(r.drag), ""]
+    return out
+
+
+def _drag_markdown(d: SwapDrag) -> str:
+    if d.counted == 0:
+        return (
+            f"Financing cost is not measurable yet: all {d.too_new} open "
+            f"position(s) are younger than one rollover, so none has been "
+            f"charged swap."
+        )
+    pct = d.annual_pct
+    rate = f", **{pct:+.1f}%/yr of notional**" if pct is not None else ""
+    tail = f" {d.too_new} position(s) are too new to count." if d.too_new else ""
+    return (
+        f"Financing: **{d.per_day:+,.0f}/day** → **{d.annual:+,.0f}/yr**{rate}, "
+        f"measured over {d.counted} position(s) held at least a day.{tail} "
+        f"A CFD pays this every night the position is held; a cash share or "
+        f"an ETF pays none of it."
+    )
 
 
 def _account_label(r: AccountMonthly, mask_logins: bool) -> str:

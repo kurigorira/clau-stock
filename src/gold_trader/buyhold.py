@@ -20,7 +20,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ["Target", "plan_targets", "round_volume"]
+__all__ = ["BUYHOLD_MAGIC", "Target", "plan_targets", "round_volume"]
+
+# The magic stamped on every held position. It lives here rather than in the
+# script because the reports need it too: nothing in config/ describes this
+# book (there is no preset - it is not a strategy the executor runs), so
+# without a name for this number the held positions report as "unknown".
+BUYHOLD_MAGIC = 20271000
 
 
 @dataclass

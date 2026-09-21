@@ -519,6 +519,35 @@ python scripts/monthly_report.py --markdown         # -> reports/monthly.md
 python scripts/monthly_report.py --email            # send via GMAIL_* env vars
 ```
 
+### Open positions, and what holding them costs
+
+Closed trades are only half the account. A buy-and-hold book never closes
+anything, so it contributes no trades at all: every table above would read
+"0 trades" indefinitely while financing was charged on the full notional
+every night. Each account therefore gets an **open positions** section —
+position count, volume, unrealised PnL, how much of that is accumulated
+swap, and the notional it is charged on — kept deliberately separate from
+the realized rows, because nothing in it is settled.
+
+Under it, one line converts the swap so far into a rate: JPY/day, JPY/year,
+and that as a percentage of notional. Two rules keep it honest:
+
+- Swap is charged at rollover, so a position opened a few hours ago has paid
+  nothing yet. Those are excluded from the rate and reported as "too new"
+  rather than averaged in, which would make the book look cheaper than it is.
+- Notional needs the broker's contract size. A symbol whose size cannot be
+  read reports `—`, never `volume x price`, because a wrong contract size is
+  wrong by whatever factor the broker actually uses.
+
+The held book is labelled `buyhold` (magic `20271000`, `buyhold.BUYHOLD_MAGIC`).
+Nothing in `config/` describes it — it is a portfolio state, not a strategy
+the executor runs — so the name is defined in code; without it the positions
+would report as `unknown`.
+
+This is the number that decides whether a CFD is the right instrument for
+holding: at roughly 7–8%/yr on notional it can consume most of an
+equity-like return, and a cash share or an ETF pays none of it.
+
 `--html [PATH]` writes a standalone HTML page (default `docs/index.html`,
 plus a `.nojekyll` beside it) — the file GitHub Pages serves. Everything the
 page states is derived from the embedded figures: the headline, the

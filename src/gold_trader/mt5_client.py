@@ -255,6 +255,17 @@ def open_positions(symbol: str, magic: int) -> list:
     return [p for p in positions if p.magic == magic]
 
 
+def all_open_positions() -> list:
+    """Every open position on the account, any symbol, any magic.
+
+    A buy-and-hold book closes nothing, so it contributes no closed trades and
+    is invisible to the monthly statistics. Its cost is real all the same -
+    swap is charged nightly on the full notional - and it only shows up here.
+    """
+    mt5 = _mt5()
+    return list(mt5.positions_get() or [])
+
+
 def today_closed_pnl(symbol: str, magic: int) -> Tuple[float, int]:
     """Return (realized_pnl_today, trailing_loss_streak) for our magic+symbol.
 

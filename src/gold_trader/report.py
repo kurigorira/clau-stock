@@ -13,6 +13,7 @@ from typing import Any
 
 import yaml
 
+from .buyhold import BUYHOLD_MAGIC
 from .config import Config
 
 
@@ -105,6 +106,10 @@ def strategy_of(
     if (symbol, magic) in magic_index:
         cfg = magic_index[(symbol, magic)]
         return cfg.strategy if cfg is not None else "ambiguous"
+    if magic == BUYHOLD_MAGIC:
+        # no preset describes this book - it is a portfolio state, not a
+        # strategy the executor runs - so name it here or it reads "unknown"
+        return "buyhold"
     return "manual" if magic == 0 else "unknown"
 
 
