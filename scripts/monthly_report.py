@@ -60,12 +60,15 @@ def _gather(account_id: str, creds: MT5Credentials, magic_index, start: datetime
         # A held book realizes nothing, so it never reaches the deal history.
         # Read it from the open positions or it stays invisible.
         positions = mt5_client.all_open_positions()
+        # Account-currency exposure per 1.0 of price, per lot. NOT the
+        # contract size: that is in the symbol's quote currency, while
+        # profit and swap arrive in the account currency.
         sizes: dict[str, float] = {}
         for symbol in {getattr(p, "symbol", "") for p in positions if getattr(p, "symbol", "")}:
             try:
-                sizes[symbol] = float(mt5_client.symbol_meta(symbol).get("contract_size") or 0.0)
+                sizes[symbol] = monthly.unit_value(mt5_client.symbol_meta(symbol))
             except Exception:  # noqa: BLE001
-                pass  # no size -> notional 0, reported as "-", never guessed
+                pass  # unreadable -> notional 0, shown as "-", never guessed
 
     trades, balance_ops = monthly.build_trades(list(deals), magic_index)
     months = monthly.monthly_stats(trades, balance_ops, balance_now=balance)

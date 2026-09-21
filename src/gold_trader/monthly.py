@@ -108,7 +108,10 @@ class OpenPosition:
     opened: datetime | None
     profit: float          # floating PnL, MT5 reports this WITHOUT swap
     swap: float            # financing paid so far; negative is a cost
-    notional: float = 0.0  # volume * contract_size * current price
+    # Exposure in the ACCOUNT currency, so it is comparable with profit and
+    # swap. 0.0 means the broker gave nothing to convert with, not "no
+    # exposure" - see unit_value.
+    notional: float = 0.0
 
     @property
     def unrealised(self) -> float:
@@ -155,12 +158,36 @@ class SwapDrag:
     def annual(self) -> float:
         return self.per_day * 365.0
 
+    # Above this, the ratio is not a financing rate. Brokers charge single
+    # digits to low tens of percent; anything near 100%/yr means the cost and
+    # the notional are not in the same currency (the first version of this
+    # divided a JPY swap by a USD notional and published -536%/yr). Better to
+    # withhold the number than to publish a unit error as a fact.
+    IMPLAUSIBLE_PCT = 100.0
+
     @property
     def annual_pct(self) -> float | None:
-        """Annual financing as a % of the notional it is charged on."""
+        """Annual financing as a % of the notional it is charged on.
+
+        None when there is nothing to divide by, or when the answer is too
+        large to be a financing rate at all.
+        """
         if self.notional <= 0:
             return None
-        return 100.0 * self.annual / self.notional
+        pct = 100.0 * self.annual / self.notional
+        if abs(pct) > self.IMPLAUSIBLE_PCT:
+            return None
+        return pct
+
+    @property
+    def rate_withheld(self) -> bool:
+        """True when a notional exists but the rate it implies is impossible.
+
+        Worth saying out loud rather than silently omitting: it means the
+        broker's figures for these symbols cannot be reconciled, which is a
+        data problem, not a quiet account.
+        """
+        return self.notional > 0 and self.annual_pct is None
 
 
 @dataclass
@@ -282,20 +309,41 @@ def monthly_stats(
     return months
 
 
+def unit_value(meta: dict) -> float:
+    """Account-currency value of 1.0 of price, per lot. 0.0 when unknown.
+
+    `contract_size * price` is denominated in the symbol's QUOTE currency,
+    but MT5 reports .profit and .swap in the ACCOUNT currency. Mixing the
+    two divides a JPY cost by a USD notional and overstates the rate by
+    whatever the FX rate happens to be.
+
+    trade_tick_value is in the account currency by definition: one lot moving
+    by trade_tick_size earns exactly that. So tick_value / tick_size is the
+    account-currency exposure per 1.0 of price, per lot - the conversion and
+    the contract size in a single number the broker itself supplies.
+    """
+    tick_value = float(meta.get("trade_tick_value") or 0.0)
+    tick_size = float(meta.get("trade_tick_size") or 0.0)
+    if tick_value <= 0 or tick_size <= 0:
+        return 0.0
+    return tick_value / tick_size
+
+
 def build_open_positions(
     positions: list[Any],
     magic_index: dict[tuple[str, int], Config],
-    contract_sizes: dict[str, float] | None = None,
+    unit_values: dict[str, float] | None = None,
     tz: timezone = JST,
 ) -> list[OpenPosition]:
     """Raw MT5 positions -> OpenPosition rows.
 
     Positions need .symbol, .magic, .volume, .time (unix seconds), .profit,
-    .swap and .price_current. `contract_sizes` maps symbol -> contract size;
-    a symbol missing from it gets notional 0 rather than a guessed size,
-    because a wrong contract size is wrong by whatever factor the broker uses.
+    .swap and .price_current. `unit_values` maps symbol -> account-currency
+    value of 1.0 of price per lot (see unit_value); a symbol missing from it
+    gets notional 0 rather than a guessed one, because a notional in the
+    wrong currency is wrong by whatever the FX rate happens to be.
     """
-    sizes = contract_sizes or {}
+    sizes = unit_values or {}
     out: list[OpenPosition] = []
     for p in positions:
         symbol = getattr(p, "symbol", "") or ""
@@ -307,7 +355,7 @@ def build_open_positions(
         if raw_time:
             opened = datetime.fromtimestamp(int(raw_time), tz=tz)
         volume = float(getattr(p, "volume", 0.0) or 0.0)
-        size = float(sizes.get(symbol) or 0.0)
+        per_price = float(sizes.get(symbol) or 0.0)  # account ccy, per lot
         price = float(getattr(p, "price_current", 0.0) or 0.0)
         out.append(
             OpenPosition(
@@ -318,7 +366,11 @@ def build_open_positions(
                 opened=opened,
                 profit=float(getattr(p, "profit", 0.0) or 0.0),
                 swap=float(getattr(p, "swap", 0.0) or 0.0),
-                notional=volume * size * price if size > 0 and price > 0 else 0.0,
+                notional=(
+                    volume * per_price * price
+                    if per_price > 0 and price > 0
+                    else 0.0
+                ),
             )
         )
     return out
@@ -434,6 +486,8 @@ def _drag_sentence(d: SwapDrag) -> str:
         )
     pct = d.annual_pct
     rate = f" = {pct:+.1f}%/yr of notional" if pct is not None else ""
+    if d.rate_withheld:
+        rate = " (rate withheld: the notional implies an impossible rate)"
     tail = f" ({d.too_new} too new to count)" if d.too_new else ""
     return (
         f"    financing: {_money(d.per_day)}/day, {_money(d.annual)}/yr{rate}"
@@ -616,6 +670,11 @@ def _drag_markdown(d: SwapDrag) -> str:
         )
     pct = d.annual_pct
     rate = f", **{pct:+.1f}%/yr of notional**" if pct is not None else ""
+    if d.rate_withheld:
+        rate = (
+            " — the rate as a percentage is withheld, because the notional "
+            "reported for these symbols implies a rate no broker charges"
+        )
     tail = f" {d.too_new} position(s) are too new to count." if d.too_new else ""
     return (
         f"Financing: **{d.per_day:+,.0f}/day** → **{d.annual:+,.0f}/yr**{rate}, "

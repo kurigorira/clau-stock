@@ -20,6 +20,7 @@ from gold_trader.monthly import (  # noqa: E402
     JST,
     AccountMonthly,
     build_open_positions,
+    unit_value,
     format_monthly_markdown,
     format_monthly_report,
     group_open,
@@ -55,15 +56,15 @@ def test_unrealised_is_profit_plus_swap():
     assert rows[0].unrealised == 380.0
 
 
-def test_notional_uses_the_contract_size():
+def test_notional_uses_the_account_currency_conversion():
     rows = build_open_positions(
         [_pos(volume=2.0, price=150.0)], {}, {"AAPL": 100.0}
     )
     assert rows[0].notional == 2.0 * 100.0 * 150.0
 
 
-def test_an_unknown_contract_size_gives_no_notional_not_a_guess():
-    # a wrong contract size is wrong by whatever factor the broker uses;
+def test_an_unknown_conversion_gives_no_notional_not_a_guess():
+    # a notional in the wrong currency is wrong by whatever the FX rate is;
     # reporting "-" is honest, reporting volume*price would not be
     rows = build_open_positions([_pos(volume=2.0, price=150.0)], {}, {})
     assert rows[0].notional == 0.0
@@ -141,20 +142,68 @@ def test_a_position_too_new_to_have_paid_is_excluded_not_averaged_in():
 
 
 def test_annual_pct_is_against_the_notional_it_is_charged_on():
+    # 100,000 notional paying 20/day -> 7,300/yr -> 7.3%, a rate a broker
+    # could plausibly charge
     rows = build_open_positions(
-        [_pos(volume=1.0, price=1000.0, swap=-73.0, days_ago=10.0)],
+        [_pos(volume=1.0, price=100_000.0, swap=-200.0, days_ago=10.0)],
         {}, {"AAPL": 1.0},
     )
     d = swap_drag(rows, NOW)
-    # -7.3/day * 365 = -2,664.50 on a 1,000 notional
-    assert d.notional == 1000.0
-    assert d.annual_pct is not None
-    assert d.annual_pct == pytest.approx(-266.45)
+    assert d.notional == 100_000.0
+    assert d.annual_pct == pytest.approx(-7.3)
 
 
 def test_no_notional_means_no_percentage_rather_than_a_division_by_zero():
     rows = build_open_positions([_pos(swap=-10.0, days_ago=5.0)], {}, {})
     assert swap_drag(rows, NOW).annual_pct is None
+
+
+def test_an_impossible_rate_is_withheld_rather_than_published():
+    # the first version divided a JPY swap by a USD notional and published
+    # -536%/yr as though it were a fact. No broker charges that; such a
+    # number means the two figures are in different currencies.
+    rows = build_open_positions(
+        [_pos(volume=1.0, price=1_000.0, swap=-73.0, days_ago=10.0)],
+        {}, {"AAPL": 1.0},
+    )
+    d = swap_drag(rows, NOW)
+    assert d.notional == 1_000.0      # a notional does exist
+    assert d.annual_pct is None       # but the rate it implies is impossible
+    assert d.rate_withheld is True
+
+
+def test_a_missing_notional_is_not_reported_as_a_withheld_rate():
+    # nothing to divide by is a different condition from an absurd answer,
+    # and only the second one signals a data problem worth naming
+    rows = build_open_positions([_pos(swap=-10.0, days_ago=5.0)], {}, {})
+    assert swap_drag(rows, NOW).rate_withheld is False
+
+
+def test_the_report_says_when_it_withheld_the_rate():
+    rows = build_open_positions(
+        [_pos(volume=1.0, price=1_000.0, swap=-73.0, days_ago=10.0)],
+        {}, {"AAPL": 1.0},
+    )
+    r = AccountMonthly(account="1", login=100001, balance=50_000.0, months=[],
+                       open_groups=group_open(rows), drag=swap_drag(rows, NOW))
+    assert "withheld" in format_monthly_report([r], "now")
+    assert "withheld" in format_monthly_markdown([r], "now")
+
+
+# --- unit_value -------------------------------------------------------------
+
+def test_unit_value_converts_via_the_brokers_own_tick_value():
+    # one lot moving by tick_size earns tick_value in the ACCOUNT currency,
+    # so tick_value/tick_size is the account-currency exposure per 1.0 of
+    # price - conversion and contract size in one number
+    assert unit_value({"trade_tick_value": 150.0, "trade_tick_size": 0.01}) == 15_000.0
+
+
+def test_unit_value_refuses_to_guess_when_the_broker_gives_nothing():
+    for meta in ({}, {"trade_tick_value": 0, "trade_tick_size": 0.01},
+                 {"trade_tick_value": 150.0, "trade_tick_size": 0},
+                 {"trade_tick_value": None, "trade_tick_size": None}):
+        assert unit_value(meta) == 0.0
 
 
 def test_an_all_new_book_reports_nothing_measurable():

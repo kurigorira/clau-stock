@@ -70,6 +70,9 @@ def _account_payload(r: AccountMonthly, mask_logins: bool) -> dict[str, Any]:
             "annualPct": (
                 None if r.drag.annual_pct is None else round(r.drag.annual_pct, 1)
             ),
+            # a notional that implies an impossible rate is a unit problem,
+            # and saying so beats quietly dropping the percentage
+            "rateWithheld": r.drag.rate_withheld,
         }
 
     return {
@@ -640,7 +643,9 @@ _TEMPLATE = r"""<!doctype html>
         title: "口座 " + esc(a.id) + " の保有コスト（スワップ）は年 " + yen(a.drag.annual),
         body: "保有中の建玉に対し <strong>" + yen(a.drag.perDay) + "／日</strong> の" +
               "金利が発生しています" +
-              (pct === null ? "" : "（想定元本の <strong>" +
+              (a.drag.rateWithheld ?
+                 "（想定元本に対する率は、業者が返した数値では成立しないため非表示）" :
+               pct === null ? "" : "（想定元本の <strong>" +
                 Math.abs(pct).toFixed(1) + "%／年</strong>）") + "。" + vs +
               "これは相場が横ばいでも毎晩差し引かれる確定費用で、" +
               "現物株やETFでは発生しません。買って持つだけが目的なら、" +
@@ -941,7 +946,10 @@ _TEMPLATE = r"""<!doctype html>
           } else {
             note = "金利負担：<b>" + yen(a.drag.perDay) + "／日</b> → <b>" +
               yen(a.drag.annual) + "／年</b>" +
-              (a.drag.annualPct === null ? "" :
+              (a.drag.rateWithheld ?
+                "（想定元本に対する率は、業者が返した想定元本では" +
+                "ありえない値になるため非表示）" :
+               a.drag.annualPct === null ? "" :
                 "（想定元本の<b>" + Math.abs(a.drag.annualPct).toFixed(1) +
                 "%／年</b>）") +
               "。1日以上保有の" + a.drag.counted + "件から算出" +

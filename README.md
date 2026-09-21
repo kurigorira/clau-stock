@@ -535,13 +535,18 @@ and that as a percentage of notional. Two rules keep it honest:
 - Swap is charged at rollover, so a position opened a few hours ago has paid
   nothing yet. Those are excluded from the rate and reported as "too new"
   rather than averaged in, which would make the book look cheaper than it is.
-- Notional needs the broker's contract size, and it is taken from the
-  broker (`symbol_meta`), never assumed per instrument — a wrong contract
-  size is wrong by whatever factor the broker actually uses. A symbol whose
-  metadata cannot be read at all reports `—` rather than a notional. Note
-  that `symbol_meta` itself falls back to a contract size of 1 when MT5
-  reports none, so "unreadable" here means the lookup failed, not that the
-  field was absent.
+- Notional is converted to the **account currency** before it is compared
+  with anything. `contract_size * price` is in the symbol's *quote*
+  currency, while MT5 reports `profit` and `swap` in the account currency;
+  dividing one by the other overstates the rate by whatever the FX rate
+  happens to be. The conversion uses `trade_tick_value / trade_tick_size`,
+  which is the account-currency exposure per 1.0 of price per lot — the
+  broker's own number, so nothing is assumed per instrument. A symbol whose
+  tick figures are missing reports `—` rather than a notional.
+- A rate above 100%/yr is withheld rather than printed. No broker charges
+  that, so such an answer means the cost and the notional are not in the
+  same units. The report says it withheld the figure instead of omitting it
+  silently, because that is a data problem worth seeing.
 
 The held book is labelled `buyhold` (magic `20271000`, `buyhold.BUYHOLD_MAGIC`).
 Nothing in `config/` describes it — it is a portfolio state, not a strategy
