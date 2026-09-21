@@ -535,9 +535,13 @@ and that as a percentage of notional. Two rules keep it honest:
 - Swap is charged at rollover, so a position opened a few hours ago has paid
   nothing yet. Those are excluded from the rate and reported as "too new"
   rather than averaged in, which would make the book look cheaper than it is.
-- Notional needs the broker's contract size. A symbol whose size cannot be
-  read reports `—`, never `volume x price`, because a wrong contract size is
-  wrong by whatever factor the broker actually uses.
+- Notional needs the broker's contract size, and it is taken from the
+  broker (`symbol_meta`), never assumed per instrument — a wrong contract
+  size is wrong by whatever factor the broker actually uses. A symbol whose
+  metadata cannot be read at all reports `—` rather than a notional. Note
+  that `symbol_meta` itself falls back to a contract size of 1 when MT5
+  reports none, so "unreadable" here means the lookup failed, not that the
+  field was absent.
 
 The held book is labelled `buyhold` (magic `20271000`, `buyhold.BUYHOLD_MAGIC`).
 Nothing in `config/` describes it — it is a portfolio state, not a strategy
