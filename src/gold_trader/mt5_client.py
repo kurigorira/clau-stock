@@ -312,7 +312,7 @@ def market_order(
     symbol: str,
     side: str,
     volume: float,
-    sl: float,
+    sl: float | None,
     tp: float | None,
     magic: int,
     deviation: int,
@@ -332,7 +332,10 @@ def market_order(
         "volume": volume,
         "type": order_type,
         "price": price,
-        "sl": sl,
+        # 0.0 is MT5's "no level", and the struct fields are doubles: a None
+        # here is not an empty stop, it is a type error that fails the order.
+        # A book held without stops passes None for both.
+        "sl": sl if sl is not None else 0.0,
         "tp": tp if tp is not None else 0.0,
         "deviation": deviation,
         "magic": magic,

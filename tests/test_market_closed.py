@@ -216,3 +216,47 @@ def test_missing_quote_defers_to_the_order():
     with patch("gold_trader.executor.mt5_client.symbol_tick",
                side_effect=RuntimeError("terminal gone")):
         assert ex._stop_still_valid(_Sig("buy", 155.16, 157.72), META, 2.56)
+
+
+class RecordingMT5(FakeMT5):
+    """FakeMT5 that keeps the request, and rejects what MT5 would reject.
+
+    The original stub accepted any dict, so a None where MT5 needs a double
+    passed every test and failed all 99 live orders. The struct fields are
+    doubles; None is a type error, not an empty level.
+    """
+    def __init__(self, tick, retcode=FakeMT5.TRADE_RETCODE_DONE):
+        super().__init__(tick, retcode)
+        self.request = None
+
+    def order_send(self, request):
+        self.request = request
+        for field in ("sl", "tp", "price", "volume"):
+            if not isinstance(request.get(field), (int, float)):
+                raise TypeError(
+                    f"{field}={request.get(field)!r} is not a double"
+                )
+        return FakeResult(self._retcode)
+
+
+def test_no_stop_sends_zero_not_none():
+    # buy and hold sets no stop; 0.0 is MT5's "no level"
+    fake = RecordingMT5(FakeTick(99.0, 100.0))
+    with patch("gold_trader.mt5_client._mt5", return_value=fake):
+        mt5_client.market_order(
+            symbol="JNJ", side="buy", volume=0.1, sl=None, tp=None,
+            magic=1, deviation=20, comment="buyhold",
+        )
+    assert fake.request["sl"] == 0.0
+    assert fake.request["tp"] == 0.0
+
+
+def test_a_real_stop_is_passed_through_untouched():
+    fake = RecordingMT5(FakeTick(99.0, 100.0))
+    with patch("gold_trader.mt5_client._mt5", return_value=fake):
+        mt5_client.market_order(
+            symbol="JNJ", side="buy", volume=0.1, sl=90.0, tp=110.0,
+            magic=1, deviation=20, comment="t",
+        )
+    assert fake.request["sl"] == 90.0
+    assert fake.request["tp"] == 110.0

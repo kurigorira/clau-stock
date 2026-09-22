@@ -139,6 +139,14 @@ def main() -> None:
             return
 
         sent = failed = 0
+        # 99 orders failing for one reason scrolls that reason off the screen,
+        # so keep a tally and repeat it at the end. The symbol name is the
+        # part that differs; the cause is the part worth reading.
+        reasons: dict[str, list[str]] = {}
+
+        def note(symbol: str, reason: str) -> None:
+            reasons.setdefault(reason, []).append(symbol)
+
         for t in buys:
             try:
                 mt5_client.market_order(
@@ -150,13 +158,38 @@ def main() -> None:
                 print(f"  bought {t.symbol} {t.to_buy:g}")
             except MarketClosedError:
                 failed += 1
+                note(t.symbol, "market closed - run again while it trades")
                 print(f"  {t.symbol}: market closed, run again while it trades")
             except Exception as exc:  # noqa: BLE001
                 failed += 1
+                # the message carries the symbol; strip it so identical
+                # failures group instead of looking like 99 distinct ones
+                note(t.symbol, str(exc).replace(t.symbol, "<symbol>"))
                 print(f"  {t.symbol}: {exc}")
         print()
         print(f"sent {sent}, failed {failed}. Re-run to top up anything missed; "
               f"symbols already at target are skipped.")
+
+        if failed:
+            print()
+            print("why they failed:")
+            for reason, symbols in sorted(
+                reasons.items(), key=lambda kv: -len(kv[1])
+            ):
+                shown = ", ".join(symbols[:5])
+                more = f" ... +{len(symbols) - 5}" if len(symbols) > 5 else ""
+                print(f"  {len(symbols):>3}x  {reason}")
+                print(f"       {shown}{more}")
+            if sent == 0:
+                print()
+                print("Nothing was sent at all, so this is one condition, not "
+                      "99 unlucky symbols. Check, in order:")
+                print("  1. Is the US market open? (JST 22:30-06:00)")
+                print("  2. Is AutoTrading enabled in this terminal? The "
+                      "toolbar button must be green - turning it off to stop "
+                      "the bots also blocks these orders.")
+                print("  3. Does the terminal allow algorithmic trading? "
+                      "Tools > Options > Expert Advisors.")
 
 
 if __name__ == "__main__":
