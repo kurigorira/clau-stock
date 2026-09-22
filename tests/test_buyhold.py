@@ -155,3 +155,50 @@ def test_a_symbol_with_no_tick_value_is_skipped_and_says_why():
     t = plan_targets({"A": (100.0, meta)}, 10_000.0)[0]
     assert t.volume == 0.0 and t.to_buy == 0.0
     assert "tick value" in t.skip
+
+
+# --- the slot: a skipped symbol must not take its budget with it ------------
+
+def _px(price, unit=150.0, vmin=0.01, step=0.01):
+    m = _meta(step=step, vmin=vmin, size=unit)
+    return (price, m)
+
+
+def test_an_unaffordable_symbol_does_not_strand_its_share():
+    # one name needs a whole 1,000-unit lot; the other two are cheap. The
+    # expensive one is skipped either way - but its share must go to the
+    # two that can use it, not sit in cash.
+    quotes = {
+        "BIG": _px(500.0, unit=150.0, vmin=1.0, step=1.0),   # 1 lot = 75,000
+        "A": _px(100.0), "B": _px(50.0),
+    }
+    plan = plan_targets(quotes, 30_000.0, exposure=1.0)
+    by = {t.symbol: t for t in plan}
+    assert by["BIG"].volume == 0.0          # still unaffordable
+    total = sum(t.notional for t in plan)
+    # 30,000 over the two that fit, not 30,000 over three with a third lost
+    assert total > 30_000.0 * 0.95
+    assert by["A"].notional == pytest.approx(by["B"].notional, rel=0.02)
+
+
+def test_the_book_never_exceeds_the_requested_exposure():
+    quotes = {f"S{i}": _px(100.0 + i) for i in range(20)}
+    for exposure in (0.5, 1.0, 2.0):
+        total = sum(t.notional for t in
+                    plan_targets(quotes, 500_000.0, exposure=exposure))
+        assert total <= 500_000.0 * exposure + 1e-6
+
+
+def test_equal_weight_still_holds_among_the_symbols_bought():
+    quotes = {"A": _px(100.0), "B": _px(50.0), "C": _px(25.0)}
+    plan = plan_targets(quotes, 30_000.0)
+    notionals = [t.notional for t in plan if t.volume > 0]
+    assert len(notionals) == 3
+    assert max(notionals) == pytest.approx(min(notionals), rel=0.02)
+
+
+def test_when_nothing_is_affordable_nothing_is_bought():
+    quotes = {"BIG": _px(500.0, unit=150.0, vmin=10.0, step=10.0)}
+    plan = plan_targets(quotes, 1_000.0)
+    assert all(t.volume == 0.0 for t in plan)
+    assert sum(t.notional for t in plan) == 0.0

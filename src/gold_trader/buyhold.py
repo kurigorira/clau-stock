@@ -69,6 +69,36 @@ def round_volume(raw: float, meta: dict) -> float:
     return lots
 
 
+def _min_lot_cost(price: float, meta: dict) -> float:
+    """What the smallest permitted position costs, in the account currency."""
+    return float(meta.get("volume_min") or 0.0) * unit_value(meta) * price
+
+
+def _slot(tradable: dict[str, tuple[float, dict]], budget: float) -> float:
+    """The per-symbol budget, spread over the symbols that can actually use it.
+
+    Dividing by every quoted symbol reserves a share for names whose smallest
+    lot costs more than that share. Those are then skipped, and their share is
+    not spent on anything - a 1.0x request built a 0.78x book with the rest
+    sitting in cash, tilted away from the highest-priced names.
+
+    So: hold the k cheapest-to-enter symbols, for the largest k whose k-th
+    cheapest still fits in `budget / k`. Shrinking k only raises the slot, so
+    the condition loosens as k falls and the largest workable k is the one
+    that holds the most symbols. Equal weight is preserved - it is equal
+    across the symbols actually bought, rather than across a list that
+    includes ones that never will be.
+    """
+    if not tradable or budget <= 0:
+        return 0.0
+    costs = sorted(_min_lot_cost(p, m) for p, m in tradable.values())
+    best = budget / len(costs)  # nothing fits: keep the strict slot
+    for k in range(len(costs), 0, -1):
+        if costs[k - 1] <= budget / k:
+            return budget / k
+    return best
+
+
 def plan_targets(
     quotes: dict[str, tuple[float, dict]],
     equity: float,
@@ -86,7 +116,11 @@ def plan_targets(
     out: list[Target] = []
     if not quotes or equity <= 0:
         return out
-    per_symbol = exposure * equity / len(quotes)
+
+    budget = exposure * equity
+    tradable = {s: quotes[s] for s in quotes
+                if quotes[s][0] > 0 and unit_value(quotes[s][1]) > 0}
+    per_symbol = _slot(tradable, budget)
 
     for symbol in sorted(quotes):
         price, meta = quotes[symbol]

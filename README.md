@@ -40,6 +40,15 @@ equity`; every order was refused for lack of margin. A symbol whose tick
 figures are missing is skipped with a reason rather than sized on a guess,
 and the plan refuses to send anything whose total exceeds `--exposure`.
 
+The per-symbol slot is spread over the symbols that can **use** it. Dividing
+by every quoted name reserves a share for ones whose smallest lot costs more
+than that share; those get skipped and their share is then spent on nothing,
+which turned a 1.0× request into a 0.78× book tilted away from the
+highest-priced names. The slot is now `budget / k` for the largest `k` whose
+`k`-th cheapest-to-enter symbol still fits — equal weight across the symbols
+actually bought. Lots still round **down**, so a little cash always remains
+and exactly 1.00× is not reachable with lot granularity.
+
 Two costs the sizing cannot remove, and they are the reason to think twice
 about the instrument:
 
