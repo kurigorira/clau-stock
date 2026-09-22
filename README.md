@@ -3,12 +3,20 @@
 Multi-account MetaTrader 5 tooling for **Vantage**, and the record of what it
 measured.
 
-> **The trading bots are stopped.** Four strategies — `donchian`, `fibonacci`,
-> `macd`, `bollrci` — each passed an out-of-sample backtest and each lost
-> live. Over the same window, simply holding the same 100 symbols returned
-> about **+21%** while the macd fleet lost **24%**: a ~45-point gap against
-> doing nothing at all. The book is now equal-weight buy and hold, built by
-> `scripts/buy_and_hold.py`. Everything else here is measurement.
+> **Account 1 holds; accounts 2 and 4 still trade.** Four strategies —
+> `donchian`, `fibonacci`, `macd`, `bollrci` — each passed an out-of-sample
+> backtest and each lost live. Over the same window, simply holding the same
+> 100 symbols returned about **+21%** while the macd fleet lost **24%**: a
+> ~45-point gap against doing nothing at all. So account 1's book is now
+> equal-weight buy and hold, built by `scripts/buy_and_hold.py`.
+>
+> Accounts 2 (`macd+stoch`) and 4 (`bollrci`) keep running, on demo, by
+> decision. Every live figure so far was taken while restarts re-fired stale
+> signals — 32 of 104 entries on account 1 had no backtest signal at all —
+> and that was fixed in `fdf71cd`, so no strategy has yet had a clean live
+> test. The bar for calling either one a success is unchanged: **beats
+> holding the same symbols over the same window, after costs** — not "beats
+> zero", and not "positive in a backtest".
 
 > Live trading carries real financial risk. Run on a demo account first and
 > only deploy capital you can afford to lose.
@@ -78,18 +86,19 @@ nothing.
 ## The retired fleets
 
 `config/us_fleet*` and the `fib_*.yaml` presets stay in the repo as the
-record of what was tried, and the `us_fleet` symbol list is still what the
-alerts and `buy_and_hold.py` read. **No bot launches them.** What each
-strategy did, and the out-of-sample figure that justified it at the time, is
-documented under *Strategies* below — alongside the live result that
-retired it.
+record of what was tried. `us_fleet` is now only the symbol **list** the
+alerts and `buy_and_hold.py` read — no bot runs its settings. `us_fleet_a2`
+and `us_fleet_a4` are live again on accounts 2 and 4; `fib_*.yaml` is
+retired. What each strategy did, and the out-of-sample figure that justified
+it at the time, is documented under *Strategies* below — alongside the live
+result it has to beat.
 
-| fleet | strategy | OOS test | live |
-|---|---|---|---|
-| `config/us_fleet` | macd + H4 trend filter | +276 | −24% of the account |
-| `config/us_fleet_a2` | macd + H4 + stoch 80/20 | +467 | no better per trade |
-| `config/us_fleet_a4` | bollrci mean reversion | +502 | −2.5%, never conclusive |
-| `fib_*.yaml` | fibonacci / donchian | — | retired 2026-07 |
+| fleet | strategy | OOS test | live so far | now |
+|---|---|---|---|---|
+| `config/us_fleet` | macd + H4 trend filter | +276 | −24% of the account | symbol list only |
+| `config/us_fleet_a2` | macd + H4 + stoch 80/20 | +467 | no better per trade | **running, account 2** |
+| `config/us_fleet_a4` | bollrci mean reversion | +502 | −2.5%, never conclusive | **running, account 4** |
+| `fib_*.yaml` | fibonacci / donchian | — | retired 2026-07 | retired |
 
 `start.bat` opens one terminal per `MT5_PATH_<n>` found in `.env`
 (suffixes 1-9), each at most once, and skips a path already opened under
