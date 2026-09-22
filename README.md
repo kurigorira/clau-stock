@@ -31,6 +31,15 @@ position and never trims one — selling is a decision to take deliberately.
 stop**. 1.0 is unlevered and falls with the market; 2.0 falls twice as fast
 and meets a margin call on the way down.
 
+Sizing is done in the **account currency**. A lot's cost comes from
+`trade_tick_value / trade_tick_size` — the broker's own account-currency
+value of 1.0 of price — never from `contract_size`, which is in the
+symbol's *quote* currency. The first version divided JPY equity by USD
+prices, asked for a book 150× the account, and printed it as `1.00x
+equity`; every order was refused for lack of margin. A symbol whose tick
+figures are missing is skipped with a reason rather than sized on a guess,
+and the plan refuses to send anything whose total exceeds `--exposure`.
+
 Two costs the sizing cannot remove, and they are the reason to think twice
 about the instrument:
 

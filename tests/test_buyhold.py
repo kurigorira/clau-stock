@@ -9,8 +9,15 @@ from gold_trader.buyhold import plan_targets, round_volume  # noqa: E402
 
 
 def _meta(step=0.01, vmin=0.01, vmax=1000.0, size=1.0):
+    """`size` is the ACCOUNT-currency value of 1.0 of price, per lot.
+
+    Expressed the way the broker gives it: one lot moving by tick_size earns
+    tick_value in the account currency, so tick_value/tick_size == size. The
+    contract size alone is in the symbol's QUOTE currency and sizing a JPY
+    account with it asked for 150x the intended book.
+    """
     return {"volume_step": step, "volume_min": vmin, "volume_max": vmax,
-            "contract_size": size}
+            "trade_tick_size": 0.01, "trade_tick_value": 0.01 * size}
 
 
 # --- round_volume -----------------------------------------------------------
@@ -63,8 +70,8 @@ def test_exposure_scales_the_whole_book():
     assert two == pytest.approx(20_000.0)
 
 
-def test_contract_size_is_part_of_the_notional():
-    # 1 lot = 100 shares: a 10,000 slot buys a tenth of what it would at 1:1
+def test_the_per_lot_value_is_part_of_the_notional():
+    # 1 lot = 100 units: a 10,000 slot buys a tenth of what it would at 1:1
     quotes = {"A": (100.0, _meta(size=100.0))}
     t = plan_targets(quotes, 10_000.0)[0]
     assert t.volume == pytest.approx(1.0)
@@ -109,3 +116,42 @@ def test_a_dead_quote_is_reported_not_sized():
 def test_no_equity_and_no_symbols_plan_nothing():
     assert plan_targets({}, 10_000.0) == []
     assert plan_targets({"A": (100.0, _meta())}, 0.0) == []
+
+
+# --- currency: the bug that asked for 150x the account ----------------------
+
+def test_sizing_uses_the_account_currency_not_the_quote_currency():
+    # A JPY account, a USD-priced symbol at 500, USDJPY 150. One lot moves
+    # 1.0 of price -> 150 JPY, so a 7,500 JPY slot buys 0.1 lots, NOT the
+    # 15 lots that dividing 7,500 by the raw USD price would give.
+    meta = _meta(step=0.01, vmin=0.01)
+    meta["trade_tick_size"] = 0.01
+    meta["trade_tick_value"] = 1.5          # 0.01 of price -> 1.5 JPY
+    t = plan_targets({"A": (500.0, meta)}, 7_500.0)[0]
+    assert t.volume == pytest.approx(0.1)
+    assert t.notional == pytest.approx(7_500.0)
+
+
+def test_the_whole_book_stays_at_the_requested_exposure():
+    # the failure was a book 150x equity that the plan printed as "1.00x"
+    metas = {}
+    for name, px in (("A", 503.76), ("B", 223.61), ("C", 42.0)):
+        m = _meta(step=0.01, vmin=0.01)
+        m["trade_tick_size"], m["trade_tick_value"] = 0.01, 1.5
+        metas[name] = (px, m)
+    equity = 700_000.0
+    plan = plan_targets(metas, equity, exposure=1.0)
+    total = sum(t.notional for t in plan)
+    # rounding down to the lot step can only undershoot, never overshoot
+    assert total <= equity * 1.0 + 1e-6
+    assert total > equity * 0.95
+
+
+def test_a_symbol_with_no_tick_value_is_skipped_and_says_why():
+    # no conversion means no way to know what a lot costs in this account's
+    # money; guessing is exactly how the 150x happened
+    meta = _meta()
+    meta["trade_tick_value"] = 0
+    t = plan_targets({"A": (100.0, meta)}, 10_000.0)[0]
+    assert t.volume == 0.0 and t.to_buy == 0.0
+    assert "tick value" in t.skip

@@ -55,6 +55,58 @@ class MarketClosedError(RuntimeError):
     surfacing a traceback every poll."""
 
 
+# What the broker's rejection codes mean, in the terms that decide what to do
+# about them. Only the ones a market order can realistically hit.
+_RETCODE_MEANINGS = {
+    10004: "requote - the price moved; retry",
+    10006: "rejected by the dealer",
+    10013: "malformed request",
+    10014: "volume not accepted for this symbol",
+    10015: "price not accepted",
+    10016: "stop level too close to the price",
+    10017: "trading disabled for this symbol on this account",
+    10018: "market closed",
+    10019: "not enough free margin",
+    10020: "price changed",
+    10021: "no quotes",
+    10024: "too many requests - slow down",
+    10026: "algorithmic trading disabled on the SERVER side",
+    10027: "algorithmic trading disabled in THIS TERMINAL "
+           "(the AutoTrading toolbar button is off)",
+    10030: "filling mode not supported for this symbol",
+    10031: "no connection to the trade server",
+    10034: "this would exceed the account's volume limit",
+}
+
+
+class OrderRejected(RuntimeError):
+    """The broker refused the order and said why.
+
+    Carries the retcode and the broker's comment as fields rather than only
+    in the message, so a caller sending many orders can group identical
+    rejections. Formatting the whole result into the string instead would
+    fold in each order's own price and volume, and a hundred orders refused
+    for one reason would read as a hundred different reasons.
+    """
+
+    def __init__(self, retcode: int | None, comment: str = ""):
+        self.retcode = retcode
+        self.comment = (comment or "").strip()
+        super().__init__(self.describe())
+
+    def describe(self) -> str:
+        """The rejection with no per-order detail in it, so it groups."""
+        if self.retcode is None:
+            return "no reply from the terminal (not connected?)"
+        meaning = _RETCODE_MEANINGS.get(self.retcode)
+        out = f"retcode {self.retcode}"
+        if meaning:
+            out += f" - {meaning}"
+        if self.comment and (not meaning or self.comment.lower() not in meaning.lower()):
+            out += f' ["{self.comment}"]'
+        return out
+
+
 # Retcodes that mean "not trading now" rather than "the request was wrong".
 # Resolved by name with numeric fallbacks because the constant set varies
 # between MetaTrader5 package versions.
@@ -212,12 +264,50 @@ def symbol_meta(symbol: str) -> dict:
     }
 
 
+def unit_value(meta: dict) -> float:
+    """Account-currency value of 1.0 of price, per lot. 0.0 when unknown.
+
+    `contract_size * price` is denominated in the symbol's QUOTE currency,
+    while equity, profit and swap are all in the ACCOUNT currency. Mixing
+    them is wrong by whatever the FX rate happens to be - as sizing a JPY
+    account against USD prices was, building a book 150x the intended size.
+
+    trade_tick_value is in the account currency by definition: one lot
+    moving by trade_tick_size earns exactly that. So tick_value / tick_size
+    is the account-currency exposure per 1.0 of price, per lot - the FX
+    conversion and the contract size in one number the broker supplies.
+
+    Returns 0.0 rather than a guess when the broker gives nothing to convert
+    with, so callers skip the symbol instead of sizing it in the wrong
+    currency.
+    """
+    tick_value = float(meta.get("trade_tick_value") or 0.0)
+    tick_size = float(meta.get("trade_tick_size") or 0.0)
+    if tick_value <= 0 or tick_size <= 0:
+        return 0.0
+    return tick_value / tick_size
+
+
 def account_equity() -> float:
     mt5 = _mt5()
     info = mt5.account_info()
     if info is None:
         raise RuntimeError("account_info unavailable")
     return float(info.equity)
+
+
+def account_currency() -> str:
+    """The account's deposit currency, e.g. "JPY".
+
+    Printed beside any figure derived from equity: a notional and an equity
+    in different currencies look identical on screen, which is how a book
+    150x the account once printed as "1.00x equity".
+    """
+    mt5 = _mt5()
+    info = mt5.account_info()
+    if info is None:
+        return "?"
+    return str(getattr(info, "currency", "") or "?")
 
 
 def list_symbols_with_paths() -> list[tuple[str, str]]:
@@ -349,7 +439,10 @@ def market_order(
             raise MarketClosedError(
                 f"{symbol}: venue not trading (retcode {result.retcode})"
             )
-        raise RuntimeError(f"order_send failed: {result}")
+        raise OrderRejected(
+            None if result is None else int(result.retcode),
+            "" if result is None else str(getattr(result, "comment", "")),
+        )
     return {"ticket": result.order, "price": result.price, "volume": result.volume}
 
 

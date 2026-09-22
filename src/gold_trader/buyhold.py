@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .mt5_client import unit_value
+
 __all__ = ["BUYHOLD_MAGIC", "Target", "plan_targets", "round_volume"]
 
 # The magic stamped on every held position. It lives here rather than in the
@@ -34,7 +36,7 @@ class Target:
     symbol: str
     price: float
     volume: float          # lots, already rounded to the broker's step
-    notional: float        # volume * contract_size * price
+    notional: float        # exposure in the ACCOUNT currency
     held: float = 0.0      # lots already open
     to_buy: float = 0.0    # lots still to buy, rounded
     skip: str = ""         # why nothing can be bought, if so
@@ -88,9 +90,21 @@ def plan_targets(
 
     for symbol in sorted(quotes):
         price, meta = quotes[symbol]
-        size = float(meta.get("contract_size") or 1.0)
-        if price <= 0 or size <= 0:
+        # Account-currency value of 1.0 of price, per lot. NOT contract_size:
+        # that is in the symbol's quote currency, and equity is in the
+        # account's. Sizing a JPY account against USD prices asked for 150x
+        # the intended book and every order was refused for lack of margin.
+        size = unit_value(meta)
+        if price <= 0:
             out.append(Target(symbol, price, 0.0, 0.0, skip="no quote"))
+            continue
+        if size <= 0:
+            # no conversion means no way to know what a lot costs in this
+            # account's money, and guessing is how the 150x happened
+            out.append(
+                Target(symbol, price, 0.0, 0.0,
+                       skip="no tick value - cannot size in account currency")
+            )
             continue
         want = round_volume(per_symbol / (price * size), meta)
         have = float(held.get(symbol, 0.0))

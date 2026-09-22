@@ -41,6 +41,7 @@ from gold_trader.config import Config  # noqa: E402
 from gold_trader.mt5_client import (  # noqa: E402
     MarketClosedError,
     MT5Credentials,
+    OrderRejected,
     UnknownSymbolError,
     connect,
 )
@@ -126,10 +127,25 @@ def main() -> None:
             print(f"  {t.symbol:<12} {t.price:>10.2f} {t.volume:>9.2f} "
                   f"{t.held:>9.2f} {t.to_buy:>9.2f} {t.notional:>12,.0f}  {t.skip}")
         total = sum(t.notional for t in plan)
+        currency = mt5_client.account_currency()
         print()
-        print(f"  target notional {total:,.0f} = {total / equity:.2f}x equity"
-              if equity else "")
+        if equity:
+            print(f"  target notional {total:,.0f} {currency} = "
+                  f"{total / equity:.2f}x equity ({equity:,.0f} {currency})")
         print(f"  orders to send: {len(buys)}")
+
+        # The first version sized a JPY account against USD prices and printed
+        # a 150x book as "1.00x". Both figures now come from the same currency
+        # by construction, so this can only trip on something new - which is
+        # exactly when it should stop rather than send a hundred orders.
+        if equity and total > equity * (args.exposure + 0.05):
+            sys.stderr.write(
+                f"\nREFUSING: the plan totals {total / equity:.2f}x equity but "
+                f"--exposure is {args.exposure:g}. Sizing and equity are "
+                f"supposed to be in the same currency; they are not. "
+                f"Nothing sent.\n"
+            )
+            sys.exit(3)
 
         if not args.execute:
             print()
@@ -160,10 +176,14 @@ def main() -> None:
                 failed += 1
                 note(t.symbol, "market closed - run again while it trades")
                 print(f"  {t.symbol}: market closed, run again while it trades")
+            except OrderRejected as exc:
+                failed += 1
+                # describe() deliberately carries no per-order detail, so a
+                # hundred orders refused for one reason group into one line
+                note(t.symbol, exc.describe())
+                print(f"  {t.symbol}: {exc}")
             except Exception as exc:  # noqa: BLE001
                 failed += 1
-                # the message carries the symbol; strip it so identical
-                # failures group instead of looking like 99 distinct ones
                 note(t.symbol, str(exc).replace(t.symbol, "<symbol>"))
                 print(f"  {t.symbol}: {exc}")
         print()

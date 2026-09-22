@@ -25,7 +25,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .config import Config
+from .mt5_client import unit_value
 from .report import strategy_of
+
+__all__ = ["unit_value"]  # re-exported: the open book and the
+# sizing must use the SAME conversion, so there is one definition
 
 JST = timezone(timedelta(hours=9))
 
@@ -307,26 +311,6 @@ def monthly_stats(
             m.end_balance = running
             running -= m.net + m.balance_ops
     return months
-
-
-def unit_value(meta: dict) -> float:
-    """Account-currency value of 1.0 of price, per lot. 0.0 when unknown.
-
-    `contract_size * price` is denominated in the symbol's QUOTE currency,
-    but MT5 reports .profit and .swap in the ACCOUNT currency. Mixing the
-    two divides a JPY cost by a USD notional and overstates the rate by
-    whatever the FX rate happens to be.
-
-    trade_tick_value is in the account currency by definition: one lot moving
-    by trade_tick_size earns exactly that. So tick_value / tick_size is the
-    account-currency exposure per 1.0 of price, per lot - the conversion and
-    the contract size in a single number the broker itself supplies.
-    """
-    tick_value = float(meta.get("trade_tick_value") or 0.0)
-    tick_size = float(meta.get("trade_tick_size") or 0.0)
-    if tick_value <= 0 or tick_size <= 0:
-        return 0.0
-    return tick_value / tick_size
 
 
 def build_open_positions(

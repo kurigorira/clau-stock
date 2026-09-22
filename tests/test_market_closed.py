@@ -260,3 +260,59 @@ def test_a_real_stop_is_passed_through_untouched():
         )
     assert fake.request["sl"] == 90.0
     assert fake.request["tp"] == 110.0
+
+
+# --- OrderRejected: rejections that group ----------------------------------
+
+def test_a_rejection_carries_the_retcode_and_comment_as_fields():
+    fake = RecordingMT5(FakeTick(99.0, 100.0), 10027)
+    with patch("gold_trader.mt5_client._mt5", return_value=fake):
+        with pytest.raises(mt5_client.OrderRejected) as caught:
+            mt5_client.market_order(
+                symbol="JNJ", side="buy", volume=0.1, sl=None, tp=None,
+                magic=1, deviation=20, comment="buyhold",
+            )
+    assert caught.value.retcode == 10027
+
+
+def test_the_description_translates_the_code():
+    exc = mt5_client.OrderRejected(10027, "AutoTrading disabled by client")
+    # the number alone tells the user nothing about what to go and change
+    assert "10027" in exc.describe()
+    assert "AutoTrading" in exc.describe()
+
+
+def test_identical_rejections_of_different_orders_group_into_one_string():
+    # the whole point: 99 orders refused for one reason must not read as 99
+    # reasons, which is what formatting the result object produced
+    a = mt5_client.OrderRejected(10019, "No money")
+    b = mt5_client.OrderRejected(10019, "No money")
+    assert a.describe() == b.describe()
+    assert "margin" in a.describe()
+
+
+def test_different_reasons_stay_apart():
+    assert (mt5_client.OrderRejected(10019).describe()
+            != mt5_client.OrderRejected(10027).describe())
+
+
+def test_an_unknown_code_still_reports_the_number_and_the_comment():
+    exc = mt5_client.OrderRejected(19999, "something new")
+    assert "19999" in exc.describe()
+    assert "something new" in exc.describe()
+
+
+def test_no_reply_at_all_is_said_plainly():
+    exc = mt5_client.OrderRejected(None)
+    assert "no reply" in exc.describe().lower()
+
+
+def test_a_closed_venue_is_still_marketclosed_not_a_rejection():
+    # these have their own handling: retry rather than report a fault
+    fake = RecordingMT5(FakeTick(99.0, 100.0), 10018)
+    with patch("gold_trader.mt5_client._mt5", return_value=fake):
+        with pytest.raises(mt5_client.MarketClosedError):
+            mt5_client.market_order(
+                symbol="JNJ", side="buy", volume=0.1, sl=None, tp=None,
+                magic=1, deviation=20, comment="t",
+            )
