@@ -47,7 +47,9 @@ def _reports():
         _deal(2, "MSFT", OUT, _unix(2026, 7, 10), -40.0),
     ]
     a2 = [
-        _deal(3, "NVDA", IN, _unix(2026, 7, 20), 0.0),
+        # magic on BOTH deals: a position belongs to whatever opened it, so
+        # stamping it only on the close would leave this the opener's trade
+        _deal(3, "NVDA", IN, _unix(2026, 7, 20), 0.0, magic=456),
         _deal(3, "NVDA", OUT, _unix(2026, 7, 21), -25.0, magic=456),
     ]
     t1, _ = build_trades(a1, _index())

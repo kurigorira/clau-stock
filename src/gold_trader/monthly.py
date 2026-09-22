@@ -238,12 +238,20 @@ def build_trades(
         if ins:
             opened = min(d.time for d in ins)
             hours = max(0.0, (last_out.time - opened) / 3600.0)
+        # Attribute by what OPENED the position, not what closed it. Closing a
+        # bot's position by hand writes magic 0 on the closing deal, which
+        # would file the whole trade - its entry included - under "manual" and
+        # quietly credit the strategy's loss, or profit, to nobody. The entry
+        # deal carries the magic of whatever decided to enter, which is the
+        # thing being judged. Falls back to the close when the opening deal is
+        # outside the queried window.
+        owner = min(ins, key=lambda d: d.time) if ins else last_out
         trades.append(
             TradeRow(
                 position_id=pos_id,
-                symbol=last_out.symbol,
-                magic=last_out.magic,
-                strategy=strategy_of(last_out.symbol, last_out.magic, magic_index),
+                symbol=owner.symbol,
+                magic=owner.magic,
+                strategy=strategy_of(owner.symbol, owner.magic, magic_index),
                 close_time=datetime.fromtimestamp(last_out.time, tz=tz),
                 net=net,
                 hours_held=hours,

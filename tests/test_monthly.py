@@ -88,8 +88,12 @@ def _two_month_trades():
         _deal(1, "AAPL", OUT, _unix(2026, 6, 3), 100.0),
         _deal(2, "MSFT", IN, _unix(2026, 6, 9), 0.0),
         _deal(2, "MSFT", OUT, _unix(2026, 6, 10), -40.0),
-        # August: one win (July is silent)
-        _deal(3, "NVDA", IN, _unix(2026, 8, 20), 0.0),
+        # August: one win, opened AND closed by hand (July is silent).
+        # Both deals carry magic 0: a trade is manual because a human opened
+        # it, not because a human closed it - closing a bot's position by
+        # hand leaves magic 0 on the close alone, and that is still the
+        # bot's trade.
+        _deal(3, "NVDA", IN, _unix(2026, 8, 20), 0.0, magic=0),
         _deal(3, "NVDA", OUT, _unix(2026, 8, 21), 60.0, magic=0),
     ]
     trades, _ = build_trades(deals, _index())
@@ -222,3 +226,67 @@ def test_hours_held_is_none_without_an_opening_deal():
     trades, _ = build_trades(deals, _index())
     assert trades[0].hours_held is None
     assert trades[0].exit_reason == "expert"
+
+
+# --- attribution: who owns a trade, the opener or the closer ---------------
+
+def _idx(symbol, magic, strategy):
+    cfg = SimpleNamespace(strategy=strategy, symbol=symbol,
+                          execution=SimpleNamespace(magic_number=magic))
+    return {(symbol, magic): cfg}
+
+
+def test_closing_a_bots_position_by_hand_keeps_it_the_bots_trade():
+    # MT5 writes magic 0 on a manual close. Going by the closing deal filed
+    # the whole trade - entry included - under "manual", crediting the
+    # strategy's result to nobody. That is exactly what happened when the
+    # retired fleets were cleared out by hand.
+    deals = [
+        _deal(1, "AAPL", IN, _unix(2026, 9, 1), 0.0, magic=20270100),
+        _deal(1, "AAPL", OUT, _unix(2026, 9, 2), -500.0, magic=0),
+    ]
+    trades, _ = build_trades(deals, _idx("AAPL", 20270100, "macd"))
+    assert len(trades) == 1
+    assert trades[0].strategy == "macd"
+    assert trades[0].magic == 20270100
+    assert trades[0].net == -500.0
+
+
+def test_the_exit_reason_still_comes_from_the_close():
+    # who owns it and how it ended are different questions
+    deals = [
+        _deal(1, "AAPL", IN, _unix(2026, 9, 1), 0.0, magic=20270100),
+        _deal(1, "AAPL", OUT, _unix(2026, 9, 2), -500.0, magic=0),
+    ]
+    deals[1].reason = 0  # CLIENT: closed by hand
+    trades, _ = build_trades(deals, _idx("AAPL", 20270100, "macd"))
+    assert trades[0].strategy == "macd"      # opened by the bot
+    assert trades[0].exit_reason == "manual"  # closed by a human
+
+
+def test_a_genuinely_manual_trade_is_still_manual():
+    deals = [
+        _deal(1, "AAPL", IN, _unix(2026, 9, 1), 0.0, magic=0),
+        _deal(1, "AAPL", OUT, _unix(2026, 9, 2), 300.0, magic=0),
+    ]
+    trades, _ = build_trades(deals, {})
+    assert trades[0].strategy == "manual"
+
+
+def test_without_the_opening_deal_it_falls_back_to_the_close():
+    # a position opened before the queried window: the close is all there is
+    deals = [_deal(1, "AAPL", OUT, _unix(2026, 9, 2), -500.0, magic=20270100)]
+    trades, _ = build_trades(deals, _idx("AAPL", 20270100, "macd"))
+    assert trades[0].strategy == "macd"
+
+
+def test_a_partial_close_by_hand_does_not_reassign_the_position():
+    deals = [
+        _deal(1, "AAPL", IN, _unix(2026, 9, 1), 0.0, magic=20270100),
+        _deal(1, "AAPL", OUT, _unix(2026, 9, 2), -200.0, magic=0),
+        _deal(1, "AAPL", OUT, _unix(2026, 9, 3), -300.0, magic=0),
+    ]
+    trades, _ = build_trades(deals, _idx("AAPL", 20270100, "macd"))
+    assert len(trades) == 1
+    assert trades[0].strategy == "macd"
+    assert trades[0].net == -500.0
