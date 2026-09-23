@@ -268,3 +268,54 @@ def test_a_real_preset_still_wins_over_the_buyhold_default():
     index = {("AAPL", BUYHOLD_MAGIC): _cfg("macd")}
     rows = build_open_positions([_pos(symbol="AAPL", magic=BUYHOLD_MAGIC)], index)
     assert rows[0].strategy == "macd"
+
+
+# --- swap as evidence, not the clock ----------------------------------------
+
+def test_a_position_that_has_paid_swap_is_counted_whatever_the_clock_says():
+    # the broker only charges swap at a rollover, so a nonzero swap IS one.
+    # The report once claimed nothing had been charged while the swap column
+    # filled up, because it went by apparent age alone.
+    rows = build_open_positions(
+        [_pos(swap=-50.0, days_ago=0.4)], {}, {"AAPL": 1.0}
+    )
+    d = swap_drag(rows, NOW)
+    assert d.counted == 1 and d.too_new == 0
+    assert d.per_day == pytest.approx(-125.0)   # -50 over 0.4 days
+
+
+def test_a_young_position_with_no_swap_is_still_too_new():
+    rows = build_open_positions(
+        [_pos(swap=0.0, days_ago=0.4)], {}, {"AAPL": 1.0}
+    )
+    d = swap_drag(rows, NOW)
+    assert d.counted == 0 and d.too_new == 1
+
+
+def test_an_old_position_with_no_swap_counts_as_genuinely_free():
+    # held for days and charged nothing: that is a swap-free symbol, and
+    # excluding it would overstate the book's cost
+    rows = build_open_positions(
+        [_pos(swap=0.0, days_ago=9.0)], {}, {"AAPL": 1.0}
+    )
+    d = swap_drag(rows, NOW)
+    assert d.counted == 1 and d.per_day == 0.0
+
+
+def test_the_age_of_the_oldest_position_is_reported():
+    rows = build_open_positions(
+        [_pos(swap=0.0, days_ago=0.1), _pos(swap=0.0, days_ago=0.6)],
+        {}, {"AAPL": 1.0},
+    )
+    d = swap_drag(rows, NOW)
+    assert d.counted == 0 and d.too_new == 2
+    assert d.oldest_days == pytest.approx(0.6)
+
+
+def test_the_not_measurable_line_says_how_old_the_book_actually_is():
+    # a book plainly days old must not be able to claim it is hours old
+    rows = build_open_positions([_pos(swap=0.0, days_ago=0.5)], {}, {"AAPL": 1.0})
+    r = AccountMonthly(account="1", login=100001, balance=1.0, months=[],
+                       open_groups=group_open(rows), drag=swap_drag(rows, NOW))
+    assert "0.5 day" in format_monthly_report([r], "now")
+    assert "0.5 day" in format_monthly_markdown([r], "now")

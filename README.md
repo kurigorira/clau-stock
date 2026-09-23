@@ -559,9 +559,15 @@ the realized rows, because nothing in it is settled.
 Under it, one line converts the swap so far into a rate: JPY/day, JPY/year,
 and that as a percentage of notional. Two rules keep it honest:
 
-- Swap is charged at rollover, so a position opened a few hours ago has paid
-  nothing yet. Those are excluded from the rate and reported as "too new"
-  rather than averaged in, which would make the book look cheaper than it is.
+- Swap is charged at rollover, so a position that has paid some has been
+  through one — that is evidence, where wall-clock age is only an inference,
+  and the two disagreed: the report claimed nothing had been charged while
+  the swap column filled up. A position with nonzero swap is counted whatever
+  its apparent age. One with no swap is counted only once it is old enough
+  that zero means "this symbol is swap-free" rather than "not charged yet";
+  until then it is reported as too new, **with the age of the oldest position
+  beside it**, so a book that is plainly days old cannot claim to be hours
+  old.
 - Notional is converted to the **account currency** before it is compared
   with anything. `contract_size * price` is in the symbol's *quote*
   currency, while MT5 reports `profit` and `swap` in the account currency;

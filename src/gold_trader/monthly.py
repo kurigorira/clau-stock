@@ -157,6 +157,9 @@ class SwapDrag:
     too_new: int = 0
     notional: float = 0.0
     per_day: float = 0.0  # JPY/day over the counted positions; negative = cost
+    # How old the oldest position actually is. Printed beside "too new" so a
+    # book that is plainly days old cannot silently claim to be hours old.
+    oldest_days: float | None = None
 
     @property
     def annual(self) -> float:
@@ -396,7 +399,19 @@ def swap_drag(
     drag = SwapDrag()
     for p in positions:
         held = p.days_held(now)
-        if held is None or held < min_days:
+        if held is not None and (drag.oldest_days is None or held > drag.oldest_days):
+            drag.oldest_days = held
+        if held is None or held <= 0:
+            drag.too_new += 1        # no age, so no rate to compute
+            continue
+        # Nonzero swap IS a rollover: the broker only charges it at one. That
+        # is direct evidence, where the clock is an inference - and the two
+        # disagreed, the report claiming nothing had been charged while the
+        # swap column filled up. A position that has paid is counted whatever
+        # its apparent age; one that has not is counted only once it is old
+        # enough that zero means "this symbol is swap-free" rather than "not
+        # charged yet".
+        if p.swap == 0.0 and held < min_days:
             drag.too_new += 1
             continue
         drag.counted += 1
@@ -472,9 +487,12 @@ def format_monthly_report(reports: list[AccountMonthly], generated_at: str) -> s
 def _drag_sentence(d: SwapDrag) -> str:
     """One line on what the financing costs, or why it cannot be said yet."""
     if d.counted == 0:
+        age = ""
+        if d.oldest_days is not None:
+            age = f"; oldest is {d.oldest_days:.1f} day(s) old"
         return (
-            f"    financing: not measurable yet - all {d.too_new} position(s) "
-            f"are younger than a rollover"
+            f"    financing: not measurable yet - none of {d.too_new} "
+            f"position(s) has been charged swap{age}"
         )
     pct = d.annual_pct
     rate = f" = {pct:+.1f}%/yr of notional" if pct is not None else ""
@@ -655,10 +673,12 @@ def _open_book_markdown(r: AccountMonthly) -> list[str]:
 
 def _drag_markdown(d: SwapDrag) -> str:
     if d.counted == 0:
+        age = ""
+        if d.oldest_days is not None:
+            age = f" The oldest has been held {d.oldest_days:.1f} day(s)."
         return (
-            f"Financing cost is not measurable yet: all {d.too_new} open "
-            f"position(s) are younger than one rollover, so none has been "
-            f"charged swap."
+            f"Financing cost is not measurable yet: none of the {d.too_new} "
+            f"open position(s) has been charged swap.{age}"
         )
     pct = d.annual_pct
     rate = f", **{pct:+.1f}%/yr of notional**" if pct is not None else ""
