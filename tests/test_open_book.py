@@ -20,6 +20,7 @@ from gold_trader.monthly import (  # noqa: E402
     JST,
     AccountMonthly,
     build_open_positions,
+    carry_rows,
     unit_value,
     format_monthly_markdown,
     format_monthly_report,
@@ -319,3 +320,71 @@ def test_the_not_measurable_line_says_how_old_the_book_actually_is():
                        open_groups=group_open(rows), drag=swap_drag(rows, NOW))
     assert "0.5 day" in format_monthly_report([r], "now")
     assert "0.5 day" in format_monthly_markdown([r], "now")
+
+
+# --- cost of carry ----------------------------------------------------------
+
+def _acct(account, notional, balance, unrealised, swap, days=10.0):
+    meta_unit = 1.0
+    price = 100.0
+    vol = notional / (price * meta_unit) if notional else 0.0
+    p = _pos(symbol="X", magic=1, volume=vol, days_ago=days,
+             profit=unrealised - swap, swap=swap, price=price)
+    rows = build_open_positions([p], {}, {"X": meta_unit})
+    return AccountMonthly(
+        account=account, login=100001, balance=balance, months=[],
+        open_groups=group_open(rows), drag=swap_drag(rows, NOW),
+    )
+
+
+def test_carry_uses_equity_not_balance():
+    # a floating loss is already backing the margin, so the balance alone
+    # overstates the cover the account actually has
+    r = _acct("1", 100_000.0, 50_000.0, -10_000.0, -100.0)
+    c = carry_rows([r])[0]
+    assert c.equity == pytest.approx(40_000.0)
+    assert c.leverage == pytest.approx(2.5)
+
+
+def test_financing_is_reported_against_the_account_as_well():
+    # -3,650/yr on a 10,000 account is 36.5% of it, whatever the rate on
+    # notional looks like
+    r = _acct("1", 1_000_000.0, 10_000.0, 0.0, -100.0, days=10.0)
+    c = carry_rows([r])[0]
+    assert c.annual == pytest.approx(-3_650.0)
+    assert c.pct_of_equity == pytest.approx(-36.5)
+
+
+def test_an_account_with_nothing_open_has_no_carry_row():
+    assert carry_rows([AccountMonthly(account="1", balance=1.0)]) == []
+
+
+def test_a_failed_account_has_no_carry_row():
+    assert carry_rows([AccountMonthly(account="9", error="boom")]) == []
+
+
+def test_no_equity_gives_no_leverage_rather_than_a_division_by_zero():
+    r = _acct("1", 100_000.0, 0.0, 0.0, -100.0)
+    c = carry_rows([r])[0]
+    assert c.leverage is None and c.pct_of_equity is None
+
+
+def test_the_markdown_carries_a_cost_of_carry_table():
+    md = format_monthly_markdown([_acct("1", 100_000.0, 50_000.0, 0.0, -100.0)],
+                                 "now")
+    assert "Cost of carry" in md
+    assert "leverage" in md
+
+
+def test_financing_beyond_the_whole_account_is_called_out():
+    # -36,500/yr against a 10,000 account: the arithmetic, not a forecast
+    md = format_monthly_markdown(
+        [_acct("5", 2_000_000.0, 10_000.0, 0.0, -1_000.0, days=10.0)], "now")
+    assert "exceeds the whole account" in md
+
+
+def test_an_unmeasured_book_is_not_given_a_number():
+    r = _acct("1", 100_000.0, 50_000.0, 0.0, 0.0, days=0.2)  # too new
+    c = carry_rows([r])[0]
+    assert c.measured is False
+    assert "not measured yet" in format_monthly_markdown([r], "now")

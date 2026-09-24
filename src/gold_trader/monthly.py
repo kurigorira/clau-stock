@@ -420,6 +420,61 @@ def swap_drag(
     return drag
 
 
+@dataclass
+class CarryRow:
+    """What one account's open book costs to keep open.
+
+    Realized PnL says how the trading went. This says what the instrument
+    charges for holding the result, which is a separate bill and does not
+    appear anywhere in the trade tables.
+    """
+    account: str
+    notional: float
+    equity: float
+    annual: float          # financing per year; negative is a cost
+    measured: bool         # False when no position has been charged yet
+
+    @property
+    def leverage(self) -> float | None:
+        if self.equity <= 0:
+            return None
+        return self.notional / self.equity
+
+    @property
+    def pct_of_equity(self) -> float | None:
+        """Annual financing against the ACCOUNT, not against the notional.
+
+        The rate on notional says whether the broker is expensive. This says
+        whether the account can survive it, which is the question leverage
+        turns into something else entirely.
+        """
+        if self.equity <= 0:
+            return None
+        return 100.0 * self.annual / self.equity
+
+
+def carry_rows(reports: list[AccountMonthly]) -> list[CarryRow]:
+    """Per-account cost of keeping the open book open."""
+    rows: list[CarryRow] = []
+    for r in reports:
+        if r.error or not r.open_groups:
+            continue
+        notional = sum(g.notional for g in r.open_groups)
+        unrealised = sum(g.unrealised for g in r.open_groups)
+        rows.append(
+            CarryRow(
+                account=r.account,
+                notional=notional,
+                # equity, not balance: an open book's floating PnL is already
+                # backing the margin, so the balance alone overstates cover
+                equity=r.balance + unrealised,
+                annual=r.drag.annual if r.drag else 0.0,
+                measured=bool(r.drag and r.drag.counted),
+            )
+        )
+    return rows
+
+
 def _money(x: float) -> str:
     # ASCII on purpose - see report._money (cp932 consoles).
     sign = "+" if x >= 0 else ""
@@ -586,6 +641,44 @@ def format_monthly_markdown(
                 f"{pf_txt} | {_num(gp + gl)} |"
             )
         out.append("")
+
+    carry = carry_rows(reports)
+    if carry:
+        out += [
+            "## Cost of carry",
+            "",
+            "What each open book costs to **keep** open. None of this is in "
+            "the tables above: financing is charged whether or not anything "
+            "is closed, and it is charged on the notional, not on the "
+            "account. The last column is what matters for survival — at "
+            "leverage, a rate the broker would call ordinary becomes a "
+            "multiple of the account per year.",
+            "",
+            "| account | notional | equity | leverage | financing/yr | as % of equity |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+        for c in carry:
+            lev = "—" if c.leverage is None else f"{c.leverage:,.1f}x"
+            pct = "—" if c.pct_of_equity is None else f"{c.pct_of_equity:+,.1f}%"
+            ann = "not measured yet" if not c.measured else _num(c.annual)
+            if not c.measured:
+                pct = "—"
+            out.append(
+                f"| {c.account} | {c.notional:,.0f} | {c.equity:,.0f} | "
+                f"{lev} | {ann} | {pct} |"
+            )
+        out.append("")
+        worst = [c for c in carry
+                 if c.measured and (c.pct_of_equity or 0) < -100.0]
+        if worst:
+            names = ", ".join(c.account for c in worst)
+            out += [
+                f"**Account {names}: financing alone exceeds the whole account "
+                "every year.** That is arithmetic on the open book, not a "
+                "forecast about prices — it is charged even if the market "
+                "never moves.",
+                "",
+            ]
 
     for r in reports:
         out.append(f"## Account {_account_label(r, mask_logins)}")

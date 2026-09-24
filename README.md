@@ -586,9 +586,18 @@ Nothing in `config/` describes it — it is a portfolio state, not a strategy
 the executor runs — so the name is defined in code; without it the positions
 would report as `unknown`.
 
+A **Cost of carry** table at the top of the report puts every account's
+notional, equity, leverage and annual financing side by side, with the
+financing also expressed against the *account* rather than the notional —
+because at leverage a rate the broker would call ordinary becomes a
+multiple of the account per year.
+
 This is the number that decides whether a CFD is the right instrument for
-holding: at roughly 7–8%/yr on notional it can consume most of an
-equity-like return, and a cash share or an ETF pays none of it.
+holding, and it is now measured rather than estimated. The held book on
+account 1 is charged **−7.9%/yr of notional**. That is the break-even: the
+market has to return more than 7.9%/yr, every year, before the position
+earns anything at all — while the drawdown is borne in full. A cash share
+or an ETF pays none of it.
 
 `--html [PATH]` writes a standalone HTML page (default `docs/index.html`,
 plus a `.nojekyll` beside it) — the file GitHub Pages serves. Everything the
