@@ -1,0 +1,11 @@
+# Crude Oil Future CFD. Inherits defaults from src/gold_trader/config.py.
+symbol: CL-OIL
+timeframe: H1
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260521
+  deviation_points: 30
+  comment: "cloil_breakout"
