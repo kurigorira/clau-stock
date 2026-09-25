@@ -161,6 +161,21 @@ class SwapDrag:
     # book that is plainly days old cannot silently claim to be hours old.
     oldest_days: float | None = None
 
+    # Swap is not charged evenly. Brokers bill the weekend on one night,
+    # usually Wednesday, at triple rate, so five charged nights carry seven
+    # days of financing. Over a window shorter than a week - especially one
+    # straddling that night - swap/days is badly biased: a book opened on a
+    # Tuesday and measured on the Friday has paid about five days of
+    # financing for three and a half days of calendar, and reads ~40% too
+    # expensive. The bias decays as whole weeks accumulate, so below this the
+    # rate is reported as provisional rather than as the answer.
+    SETTLES_AFTER_DAYS = 7.0
+
+    @property
+    def settled(self) -> bool:
+        """Has the book been held long enough to average the triple night?"""
+        return (self.oldest_days or 0.0) >= self.SETTLES_AFTER_DAYS
+
     @property
     def annual(self) -> float:
         return self.per_day * 365.0
@@ -433,6 +448,9 @@ class CarryRow:
     equity: float
     annual: float          # financing per year; negative is a cost
     measured: bool         # False when no position has been charged yet
+    # False while the book is younger than a week: the weekend is billed on
+    # one night at triple rate, so a part-week reads too expensive.
+    settled: bool = True
 
     @property
     def leverage(self) -> float | None:
@@ -470,6 +488,7 @@ def carry_rows(reports: list[AccountMonthly]) -> list[CarryRow]:
                 equity=r.balance + unrealised,
                 annual=r.drag.annual if r.drag else 0.0,
                 measured=bool(r.drag and r.drag.counted),
+                settled=bool(r.drag and r.drag.settled),
             )
         )
     return rows
@@ -554,10 +573,18 @@ def _drag_sentence(d: SwapDrag) -> str:
     if d.rate_withheld:
         rate = " (rate withheld: the notional implies an impossible rate)"
     tail = f" ({d.too_new} too new to count)" if d.too_new else ""
-    return (
+    lines = [
         f"    financing: {_money(d.per_day)}/day, {_money(d.annual)}/yr{rate}"
         f", over {d.counted} position(s){tail}"
-    )
+    ]
+    if not d.settled:
+        held = f"{d.oldest_days:.1f}" if d.oldest_days is not None else "?"
+        lines.append(
+            f"      PROVISIONAL - held {held} day(s). The weekend is billed on "
+            f"one night at triple rate, so a part-week reads too expensive; "
+            f"settles after {d.SETTLES_AFTER_DAYS:.0f} days."
+        )
+    return "\n".join(lines)
 
 
 def _open_book_lines(r: AccountMonthly) -> list[str]:
@@ -663,11 +690,23 @@ def format_monthly_markdown(
             ann = "not measured yet" if not c.measured else _num(c.annual)
             if not c.measured:
                 pct = "—"
+            elif not c.settled:
+                ann += " *"
+                pct += " *"
             out.append(
                 f"| {c.account} | {c.notional:,.0f} | {c.equity:,.0f} | "
                 f"{lev} | {ann} | {pct} |"
             )
         out.append("")
+        if any(c.measured and not c.settled for c in carry):
+            out += [
+                "\\* **Provisional.** Swap is not charged evenly — the weekend "
+                "is billed on a single night at triple rate, so five charged "
+                "nights carry seven days of financing. A book held less than a "
+                "week, especially across that night, reads too expensive. "
+                "These settle once whole weeks accumulate.",
+                "",
+            ]
         worst = [c for c in carry
                  if c.measured and (c.pct_of_equity or 0) < -100.0]
         if worst:
@@ -781,12 +820,23 @@ def _drag_markdown(d: SwapDrag) -> str:
             "reported for these symbols implies a rate no broker charges"
         )
     tail = f" {d.too_new} position(s) are too new to count." if d.too_new else ""
-    return (
+    out = (
         f"Financing: **{d.per_day:+,.0f}/day** → **{d.annual:+,.0f}/yr**{rate}, "
         f"measured over {d.counted} position(s) held at least a day.{tail} "
         f"A CFD pays this every night the position is held; a cash share or "
         f"an ETF pays none of it."
     )
+    if not d.settled:
+        held = f"{d.oldest_days:.1f}" if d.oldest_days is not None else "?"
+        out += (
+            f"\n\n**This rate is provisional** — the book is {held} day(s) old. "
+            f"Swap is not charged evenly: the weekend is billed on a single "
+            f"night at triple rate, so five charged nights carry seven days of "
+            f"financing. Measured over less than a week, and especially across "
+            f"that night, the daily rate reads too expensive. It settles once "
+            f"whole weeks accumulate."
+        )
+    return out
 
 
 def _account_label(r: AccountMonthly, mask_logins: bool) -> str:

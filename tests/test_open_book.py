@@ -388,3 +388,62 @@ def test_an_unmeasured_book_is_not_given_a_number():
     c = carry_rows([r])[0]
     assert c.measured is False
     assert "not measured yet" in format_monthly_markdown([r], "now")
+
+
+# --- the triple-swap night: a part-week reads too expensive -----------------
+
+def test_a_book_younger_than_a_week_is_provisional():
+    # the weekend is billed on one night at triple rate, so five charged
+    # nights carry seven days of financing; a part-week straddling that
+    # night reads ~40% too expensive
+    rows = build_open_positions(
+        [_pos(swap=-100.0, days_ago=3.5)], {}, {"AAPL": 1.0}
+    )
+    d = swap_drag(rows, NOW)
+    assert d.counted == 1
+    assert d.settled is False
+
+
+def test_a_book_past_a_week_is_settled():
+    rows = build_open_positions(
+        [_pos(swap=-100.0, days_ago=8.0)], {}, {"AAPL": 1.0}
+    )
+    assert swap_drag(rows, NOW).settled is True
+
+
+def test_the_report_marks_a_provisional_rate_as_such():
+    rows = build_open_positions(
+        [_pos(volume=1.0, price=100_000.0, swap=-200.0, days_ago=3.5)],
+        {}, {"AAPL": 1.0},
+    )
+    r = AccountMonthly(account="1", login=100001, balance=500_000.0, months=[],
+                       open_groups=group_open(rows), drag=swap_drag(rows, NOW))
+    text = format_monthly_report([r], "now")
+    md = format_monthly_markdown([r], "now")
+    assert "PROVISIONAL" in text
+    assert "provisional" in md.lower()
+    assert "triple" in md.lower()
+    assert "3.5 day" in md
+
+
+def test_a_settled_rate_carries_no_warning():
+    rows = build_open_positions(
+        [_pos(volume=1.0, price=100_000.0, swap=-200.0, days_ago=9.0)],
+        {}, {"AAPL": 1.0},
+    )
+    r = AccountMonthly(account="1", login=100001, balance=500_000.0, months=[],
+                       open_groups=group_open(rows), drag=swap_drag(rows, NOW))
+    assert "PROVISIONAL" not in format_monthly_report([r], "now")
+    assert "provisional" not in format_monthly_markdown([r], "now").lower()
+
+
+def test_the_carry_table_flags_a_provisional_row():
+    rows = build_open_positions(
+        [_pos(volume=1.0, price=100_000.0, swap=-200.0, days_ago=3.5)],
+        {}, {"AAPL": 1.0},
+    )
+    r = AccountMonthly(account="1", login=100001, balance=500_000.0, months=[],
+                       open_groups=group_open(rows), drag=swap_drag(rows, NOW))
+    assert carry_rows([r])[0].settled is False
+    md = format_monthly_markdown([r], "now")
+    assert "Provisional" in md

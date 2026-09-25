@@ -593,11 +593,19 @@ because at leverage a rate the broker would call ordinary becomes a
 multiple of the account per year.
 
 This is the number that decides whether a CFD is the right instrument for
-holding, and it is now measured rather than estimated. The held book on
-account 1 is charged **−7.9%/yr of notional**. That is the break-even: the
-market has to return more than 7.9%/yr, every year, before the position
-earns anything at all — while the drawdown is borne in full. A cash share
-or an ETF pays none of it.
+holding, and it is measured rather than estimated — but it needs a week to
+settle. **Swap is not charged evenly**: the weekend is billed on a single
+night, usually Wednesday, at triple rate, so five charged nights carry
+seven days of financing. Measured over less than a week, and especially
+across that night, `swap / days_held` reads far too expensive — the held
+book printed −7.9%/yr after three days and −9.9%/yr after four. A rate
+from a book younger than seven days is marked **provisional**, in the
+per-account line and with a `*` in the carry table.
+
+Whatever it settles at, the shape of the answer does not change: that rate
+is the break-even. The market has to return more than it, every year,
+before the position earns anything at all — while the drawdown is borne in
+full. A cash share or an ETF pays none of it.
 
 `--html [PATH]` writes a standalone HTML page (default `docs/index.html`,
 plus a `.nojekyll` beside it) — the file GitHub Pages serves. Everything the
