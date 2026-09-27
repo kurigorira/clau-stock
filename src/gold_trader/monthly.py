@@ -162,14 +162,17 @@ class SwapDrag:
     oldest_days: float | None = None
 
     # Swap is not charged evenly. Brokers bill the weekend on one night,
-    # usually Wednesday, at triple rate, so five charged nights carry seven
-    # days of financing. Over a window shorter than a week - especially one
-    # straddling that night - swap/days is badly biased: a book opened on a
-    # Tuesday and measured on the Friday has paid about five days of
-    # financing for three and a half days of calendar, and reads ~40% too
-    # expensive. The bias decays as whole weeks accumulate, so below this the
-    # rate is reported as provisional rather than as the answer.
-    SETTLES_AFTER_DAYS = 7.0
+    # usually Wednesday, at triple rate, so the charge lands in weekly lumps
+    # while days_held grows continuously. cumulative_swap / days_held
+    # therefore sawtooths: it jumps on the triple night and decays every day
+    # after, and where in that cycle a reading falls decides what it says.
+    #
+    # The amplitude is roughly a couple of days' charge spread over the
+    # holding period, so it decays as ~1/days: about +/-29% at a week,
+    # +/-14% at a fortnight, +/-7% at a month. A week is nowhere near
+    # enough - the live account read -810%, -744% and -688% of equity on
+    # three consecutive days while flagged as settled. A month is.
+    SETTLES_AFTER_DAYS = 28.0
 
     @property
     def settled(self) -> bool:
@@ -579,10 +582,13 @@ def _drag_sentence(d: SwapDrag) -> str:
     ]
     if not d.settled:
         held = f"{d.oldest_days:.1f}" if d.oldest_days is not None else "?"
+        band = ""
+        if d.oldest_days:
+            band = f" (roughly +/-{200.0 / d.oldest_days:.0f}%)"
         lines.append(
-            f"      PROVISIONAL - held {held} day(s). The weekend is billed on "
-            f"one night at triple rate, so a part-week reads too expensive; "
-            f"settles after {d.SETTLES_AFTER_DAYS:.0f} days."
+            f"      PROVISIONAL - held {held} day(s){band}. Swap lands in "
+            f"weekly lumps while days accrue daily, so this reading swings "
+            f"with the week; settles near {d.SETTLES_AFTER_DAYS:.0f} days."
         )
     return "\n".join(lines)
 
@@ -701,10 +707,11 @@ def format_monthly_markdown(
         if any(c.measured and not c.settled for c in carry):
             out += [
                 "\\* **Provisional.** Swap is not charged evenly — the weekend "
-                "is billed on a single night at triple rate, so five charged "
-                "nights carry seven days of financing. A book held less than a "
-                "week, especially across that night, reads too expensive. "
-                "These settle once whole weeks accumulate.",
+                "is billed on a single night at triple rate — so the charge "
+                "arrives in weekly lumps while the days it is divided by "
+                "accrue daily. The reading swings across the week, by roughly "
+                "±29% at a week held and ±7% at a month, so these are worth "
+                "reading as numbers near a month, not before.",
                 "",
             ]
         worst = [c for c in carry
@@ -828,13 +835,18 @@ def _drag_markdown(d: SwapDrag) -> str:
     )
     if not d.settled:
         held = f"{d.oldest_days:.1f}" if d.oldest_days is not None else "?"
+        band = ""
+        if d.oldest_days:
+            band = f" — roughly **±{200.0 / d.oldest_days:.0f}%** at this age"
         out += (
-            f"\n\n**This rate is provisional** — the book is {held} day(s) old. "
-            f"Swap is not charged evenly: the weekend is billed on a single "
-            f"night at triple rate, so five charged nights carry seven days of "
-            f"financing. Measured over less than a week, and especially across "
-            f"that night, the daily rate reads too expensive. It settles once "
-            f"whole weeks accumulate."
+            f"\n\n**This rate is provisional**{band}. The book is {held} day(s) "
+            f"old, and swap is not charged evenly: the weekend is billed on a "
+            f"single night at triple rate, so the charge arrives in weekly "
+            f"lumps while the days it is divided by accrue daily. The reading "
+            f"therefore swings across the week — jumping on the triple night, "
+            f"decaying every day after — with the swing shrinking as roughly "
+            f"1/days. It is worth reading as a number near "
+            f"{d.SETTLES_AFTER_DAYS:.0f} days, not before."
         )
     return out
 

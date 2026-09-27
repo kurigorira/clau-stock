@@ -404,9 +404,19 @@ def test_a_book_younger_than_a_week_is_provisional():
     assert d.settled is False
 
 
-def test_a_book_past_a_week_is_settled():
+def test_a_week_is_not_long_enough_to_settle():
+    # the live account read -810%, -744% and -688% of equity on three
+    # consecutive days while a seven-day rule called it settled
     rows = build_open_positions(
         [_pos(swap=-100.0, days_ago=8.0)], {}, {"AAPL": 1.0}
+    )
+    assert swap_drag(rows, NOW).settled is False
+
+
+def test_a_book_past_a_month_is_settled():
+    # the weekly swing decays as ~1/days: about +/-7% at a month
+    rows = build_open_positions(
+        [_pos(swap=-100.0, days_ago=30.0)], {}, {"AAPL": 1.0}
     )
     assert swap_drag(rows, NOW).settled is True
 
@@ -428,7 +438,7 @@ def test_the_report_marks_a_provisional_rate_as_such():
 
 def test_a_settled_rate_carries_no_warning():
     rows = build_open_positions(
-        [_pos(volume=1.0, price=100_000.0, swap=-200.0, days_ago=9.0)],
+        [_pos(volume=1.0, price=100_000.0, swap=-200.0, days_ago=30.0)],
         {}, {"AAPL": 1.0},
     )
     r = AccountMonthly(account="1", login=100001, balance=500_000.0, months=[],
@@ -447,3 +457,16 @@ def test_the_carry_table_flags_a_provisional_row():
     assert carry_rows([r])[0].settled is False
     md = format_monthly_markdown([r], "now")
     assert "Provisional" in md
+
+
+def test_the_provisional_note_states_how_wide_the_swing_is():
+    # "provisional" without a size is not information: at 10 days the
+    # reading swings about +/-20%, which is the number to act on
+    rows = build_open_positions(
+        [_pos(volume=1.0, price=100_000.0, swap=-200.0, days_ago=10.0)],
+        {}, {"AAPL": 1.0},
+    )
+    r = AccountMonthly(account="1", login=100001, balance=500_000.0, months=[],
+                       open_groups=group_open(rows), drag=swap_drag(rows, NOW))
+    assert "±20%" in format_monthly_markdown([r], "now")
+    assert "+/-20%" in format_monthly_report([r], "now")

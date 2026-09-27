@@ -597,10 +597,18 @@ holding, and it is measured rather than estimated — but it needs a week to
 settle. **Swap is not charged evenly**: the weekend is billed on a single
 night, usually Wednesday, at triple rate, so five charged nights carry
 seven days of financing. Measured over less than a week, and especially
-across that night, `swap / days_held` reads far too expensive — the held
-book printed −7.9%/yr after three days and −9.9%/yr after four. A rate
-from a book younger than seven days is marked **provisional**, in the
-per-account line and with a `*` in the carry table.
+across that night, `swap / days_held` misreads badly. Worse, the charge
+arrives in weekly lumps while the days it is divided by accrue daily, so
+the reading **sawtooths**: it jumps on the triple night and decays every
+day after. The held book printed −7.9%, −9.9%, −7.4% and −5.9%/yr on four
+consecutive days on a notional that barely moved.
+
+The swing shrinks as roughly 1/days — about ±29% at a week, ±14% at a
+fortnight, ±7% at a month — so a rate is marked **provisional** until the
+book is 28 days old, with the width of the swing printed beside it and a
+`*` in the carry table. Seven days was the first threshold and was far too
+loose: the live account read −810%, −744% and −688% of equity on three
+consecutive days while flagged as settled.
 
 Whatever it settles at, the shape of the answer does not change: that rate
 is the break-even. The market has to return more than it, every year,
