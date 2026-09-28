@@ -290,3 +290,49 @@ def test_a_partial_close_by_hand_does_not_reassign_the_position():
     assert len(trades) == 1
     assert trades[0].strategy == "macd"
     assert trades[0].net == -500.0
+
+
+# --- how trades ended: a forced close is not a chosen one -------------------
+
+def _closed(pos, reason, profit=-100.0, magic=0, t=None):
+    d_in = _deal(pos, "AAPL", IN, t or _unix(2026, 9, 1), 0.0, magic=magic)
+    d_out = _deal(pos, "AAPL", OUT, (t or _unix(2026, 9, 1)) + 3600,
+                  profit, magic=magic)
+    d_out.reason = reason
+    return [d_in, d_out]
+
+
+def test_exit_reasons_are_counted_per_month():
+    deals = (_closed(1, 4) + _closed(2, 4) + _closed(3, 5) + _closed(4, 6))
+    trades, _ = build_trades(deals, {})
+    months = monthly_stats(trades, [])
+    assert months[0].by_exit == {"sl": 2, "tp": 1, "stopout": 1}
+    assert months[0].stopouts == 1
+
+
+def test_a_stopout_is_named_in_the_report():
+    # identical in every other column to a deliberate close, and not the
+    # same event: the account ran out of cover
+    deals = _closed(1, 6)
+    trades, _ = build_trades(deals, {})
+    r = AccountMonthly(account="5", login=100001, balance=0.0,
+                       months=monthly_stats(trades, [], balance_now=0.0))
+    md = format_monthly_markdown([r], "now")
+    assert "How trades ended" in md
+    assert "margin stop-out" in md
+    assert "closed by the broker for margin" in md
+
+
+def test_no_stopout_means_no_alarm():
+    deals = _closed(1, 4) + _closed(2, 5)
+    trades, _ = build_trades(deals, {})
+    r = AccountMonthly(account="1", login=100001, balance=0.0,
+                       months=monthly_stats(trades, [], balance_now=0.0))
+    md = format_monthly_markdown([r], "now")
+    assert "How trades ended" in md
+    assert "closed by the broker" not in md
+
+
+def test_an_account_with_no_trades_gains_no_exit_table():
+    r = AccountMonthly(account="1", login=100001, balance=1.0, months=[])
+    assert "How trades ended" not in format_monthly_markdown([r], "now")

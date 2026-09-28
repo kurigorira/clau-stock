@@ -586,6 +586,16 @@ Nothing in `config/` describes it — it is a portfolio state, not a strategy
 the executor runs — so the name is defined in code; without it the positions
 would report as `unknown`.
 
+### How trades ended
+
+Each account also gets an exit breakdown: stop loss, take profit, the
+strategy's own exit, closed by hand, or **margin stop-out**. A stop-out is
+identical to a deliberate close in every other column — same trade count,
+same PnL — and it is not the same event: it means the account ran out of
+cover while the positions were still open, so the size was the problem
+whatever the trades were doing. The report says so in as many words when
+one appears, because nothing else in the numbers distinguishes it.
+
 A **Cost of carry** table at the top of the report puts every account's
 notional, equity, leverage and annual financing side by side, with the
 financing also expressed against the *account* rather than the notional —

@@ -85,7 +85,16 @@ class MonthStats:
     gross_loss: float = 0.0  # negative
     balance_ops: float = 0.0
     by_strategy: dict[str, list] = field(default_factory=dict)  # name -> [pnl, n]
+    # What ended each trade: "sl" | "tp" | "expert" | "manual" | "stopout" |
+    # "unknown" -> count. A forced close and a chosen one are the same row in
+    # every other column, and they are not the same event.
+    by_exit: dict[str, int] = field(default_factory=dict)
     end_balance: float | None = None
+
+    @property
+    def stopouts(self) -> int:
+        """Positions the broker closed for margin, not the account holder."""
+        return self.by_exit.get("stopout", 0)
 
     @property
     def net(self) -> float:
@@ -316,6 +325,7 @@ def monthly_stats(
         entry = m.by_strategy.setdefault(t.strategy, [0.0, 0])
         entry[0] += t.net
         entry[1] += 1
+        m.by_exit[t.exit_reason] = m.by_exit.get(t.exit_reason, 0) + 1
 
     for d in balance_ops:
         key = datetime.fromtimestamp(d.time, tz=tz).strftime("%Y-%m")
@@ -777,6 +787,8 @@ def format_monthly_markdown(
             ]
             out.append("")
 
+        out += _exit_markdown(r)
+
         out += _open_book_markdown(r)
 
     return "\n".join(out)
@@ -850,6 +862,46 @@ def _drag_markdown(d: SwapDrag) -> str:
         )
     return out
 
+
+
+_EXIT_LABELS = {
+    "sl": "stop loss",
+    "tp": "take profit",
+    "expert": "the strategy's own exit",
+    "manual": "closed by hand",
+    "stopout": "**margin stop-out**",
+    "unknown": "not reported",
+}
+
+
+def _exit_markdown(r: AccountMonthly) -> list[str]:
+    """How trades ended, and whether any of them was not a choice.
+
+    A stop-out and a deliberate close are identical in every other column -
+    same trade count, same PnL - and they are not the same event. One is a
+    decision; the other is the broker deciding for you.
+    """
+    totals: dict[str, int] = {}
+    for m in r.months:
+        for reason, n in m.by_exit.items():
+            totals[reason] = totals.get(reason, 0) + n
+    if not totals:
+        return []
+
+    out = ["How trades ended:", "", "| exit | trades |", "|---|---:|"]
+    for reason, n in sorted(totals.items(), key=lambda kv: -kv[1]):
+        out.append(f"| {_EXIT_LABELS.get(reason, reason)} | {n} |")
+    out.append("")
+    stopouts = totals.get("stopout", 0)
+    if stopouts:
+        out += [
+            f"**{stopouts} position(s) were closed by the broker for margin, "
+            "not by a decision.** A stop-out means the account ran out of "
+            "cover while the positions were still open — the size was the "
+            "problem, whatever the trades were doing.",
+            "",
+        ]
+    return out
 
 def _account_label(r: AccountMonthly, mask_logins: bool) -> str:
     if not r.login:
