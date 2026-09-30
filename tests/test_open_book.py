@@ -470,3 +470,34 @@ def test_the_provisional_note_states_how_wide_the_swing_is():
                        open_groups=group_open(rows), drag=swap_drag(rows, NOW))
     assert "±20%" in format_monthly_markdown([r], "now")
     assert "+/-20%" in format_monthly_report([r], "now")
+
+
+def test_an_account_with_no_equity_left_is_named():
+    # positions still open on an account with nothing behind them
+    rows = build_open_positions(
+        [_pos(volume=1.0, price=1_000.0, swap=-1.0, days_ago=2.0)],
+        {}, {"AAPL": 1.0},
+    )
+    r = AccountMonthly(account="5", login=100001, balance=0.0, months=[],
+                       open_groups=group_open(rows), drag=swap_drag(rows, NOW))
+    md = format_monthly_markdown([r], "now")
+    assert "equity is at or below zero" in md
+
+
+def test_a_healthy_account_is_not_named():
+    rows = build_open_positions(
+        [_pos(volume=1.0, price=1_000.0, swap=-1.0, days_ago=2.0)],
+        {}, {"AAPL": 1.0},
+    )
+    r = AccountMonthly(account="1", login=100001, balance=500_000.0, months=[],
+                       open_groups=group_open(rows), drag=swap_drag(rows, NOW))
+    assert "at or below zero" not in format_monthly_markdown([r], "now")
+
+
+def test_the_carry_table_warns_that_a_trading_book_is_not_one_book():
+    rows = build_open_positions([_pos(swap=-10.0, days_ago=2.0)], {}, {"AAPL": 1.0})
+    r = AccountMonthly(account="1", login=100001, balance=1_000.0, months=[],
+                       open_groups=group_open(rows), drag=swap_drag(rows, NOW))
+    md = format_monthly_markdown([r], "now")
+    assert "positions open at this snapshot" in md
+    assert "change sign" in md

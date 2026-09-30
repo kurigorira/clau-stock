@@ -697,6 +697,14 @@ def format_monthly_markdown(
             "leverage, a rate the broker would call ordinary becomes a "
             "multiple of the account per year.",
             "",
+            "These describe **the positions open at this snapshot**. For a "
+            "book that is genuinely held, consecutive days measure the same "
+            "book and the rate converges. For one that trades, they measure "
+            "whatever happened to be open each morning — different positions, "
+            "different symbols, sometimes a different direction — so two "
+            "readings are not two estimates of one number and the rate can "
+            "swing, or change sign, without anything being wrong.",
+            "",
             "| account | notional | equity | leverage | financing/yr | as % of equity |",
             "|---|---:|---:|---:|---:|---:|",
         ]
@@ -722,6 +730,15 @@ def format_monthly_markdown(
                 "accrue daily. The reading swings across the week, by roughly "
                 "±29% at a week held and ±7% at a month, so these are worth "
                 "reading as numbers near a month, not before.",
+                "",
+            ]
+        broke = [c for c in carry if c.equity <= 0]
+        if broke:
+            names = ", ".join(c.account for c in broke)
+            out += [
+                f"**Account {names}: equity is at or below zero** with "
+                "positions still open. There is no cover left for them to "
+                "move against.",
                 "",
             ]
         worst = [c for c in carry
