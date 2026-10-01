@@ -282,7 +282,9 @@ def test_a_position_that_has_paid_swap_is_counted_whatever_the_clock_says():
     )
     d = swap_drag(rows, NOW)
     assert d.counted == 1 and d.too_new == 0
-    assert d.per_day == pytest.approx(-125.0)   # -50 over 0.4 days
+    # the charge covers one night, so one night is what it is spread over -
+    # not the 0.4 days of calendar that happen to have elapsed
+    assert d.per_day == pytest.approx(-50.0)
 
 
 def test_a_young_position_with_no_swap_is_still_too_new():
@@ -501,3 +503,41 @@ def test_the_carry_table_warns_that_a_trading_book_is_not_one_book():
     md = format_monthly_markdown([r], "now")
     assert "positions open at this snapshot" in md
     assert "change sign" in md
+
+
+def test_a_nights_charge_is_never_spread_over_less_than_a_day():
+    # held 2.4 hours, charged at a rollover it crossed. The charge covers a
+    # night; dividing by 0.1 days would claim a rate twelve times too big.
+    rows = build_open_positions(
+        [_pos(swap=-10.0, days_ago=0.1)], {}, {"AAPL": 1.0}
+    )
+    d = swap_drag(rows, NOW)
+    assert d.counted == 1
+    assert d.per_day == pytest.approx(-10.0)   # not -100.0
+
+
+def test_a_young_position_cannot_dominate_a_long_held_one():
+    # the live book reported +47,427/yr while its cumulative swap was
+    # negative: a position held hours contributed its whole charge as a
+    # DAILY rate. Capped at one night, it can no longer outweigh the rest
+    # by an order of magnitude.
+    rows = build_open_positions(
+        [_pos(symbol="A", swap=+10.0, days_ago=0.1),
+         _pos(symbol="B", swap=-23.0, days_ago=10.0)],
+        {}, {"A": 1.0, "B": 1.0},
+    )
+    d = swap_drag(rows, NOW)
+    assert d.per_day == pytest.approx(10.0 - 2.3)   # was 100.0 - 2.3
+
+
+def test_cumulative_swap_and_the_daily_rate_are_different_questions():
+    # a long-held position has paid more in total while costing less per
+    # night, so the two can legitimately disagree in sign. The rate is what
+    # the book costs going forward; the total is what it has cost so far.
+    rows = build_open_positions(
+        [_pos(symbol="A", swap=+10.0, days_ago=1.0),
+         _pos(symbol="B", swap=-23.0, days_ago=10.0)],
+        {}, {"A": 1.0, "B": 1.0},
+    )
+    assert sum(r.swap for r in rows) < 0        # paid more than earned
+    assert swap_drag(rows, NOW).per_day > 0     # yet earns per night now

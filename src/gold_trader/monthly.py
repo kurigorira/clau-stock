@@ -444,7 +444,12 @@ def swap_drag(
             continue
         drag.counted += 1
         drag.notional += p.notional
-        drag.per_day += p.swap / held
+        # A swap charge covers a NIGHT, so it cannot be spread over less than
+        # a day. Dividing by the raw elapsed time lets a position held two
+        # hours that happened to cross a rollover contribute twelve times its
+        # weight - enough, on one account, to report the book as RECEIVING
+        # 47,427/yr while its cumulative swap was negative.
+        drag.per_day += p.swap / max(held, 1.0)
     return drag
 
 
