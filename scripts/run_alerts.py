@@ -25,31 +25,36 @@ import sys
 import time as time_mod
 from pathlib import Path
 
-import yaml
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from gold_trader import alerts, mt5_client, notify  # noqa: E402
+from gold_trader import alerts, mt5_client, notify, watchlist  # noqa: E402
 from gold_trader.cli_util import expand_paths  # noqa: E402
 from gold_trader.config import Config  # noqa: E402
 from gold_trader.logger import setup_logging  # noqa: E402
 from gold_trader.mt5_client import MT5Credentials, connect  # noqa: E402
 
 
-def _load_watchlist(path: str) -> dict:
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-    return {
-        "threshold_pct": float(raw.get("threshold_pct", 2.0)),
-        "window_minutes": int(raw.get("window_minutes", 10)),
-        "poll_seconds": int(raw.get("poll_seconds", 30)),
-        "throttle_sec": int(raw.get("throttle_sec", 1800)),
-        "extra_symbols": list(raw.get("extra_symbols") or []),
-        # Multi-day streak alert, independent of the intraday one above.
-        "streak_threshold_pct": float(raw.get("streak_threshold_pct", 5.0)),
-        "streak_days": int(raw.get("streak_days", 2)),
-        "streak_same_direction": bool(raw.get("streak_same_direction", True)),
-    }
+def _read_settings(path: str) -> tuple[dict | None, str]:
+    """(settings, "") or (None, why). Same rules the settings app enforces."""
+    try:
+        raw = watchlist.load(path)
+    except watchlist.SettingsError as exc:
+        return None, str(exc)
+    clean, errors = watchlist.validate(raw)
+    if errors:
+        return None, "; ".join(f"{k} {v}" for k, v in errors.items())
+    return clean, ""
+
+
+def _symbol_list(preset: list[str], extra: list[str], retired: set[str]) -> list[str]:
+    """Presets then extras, de-duplicated, minus symbols the terminal refused.
+
+    Retired symbols stay retired across a reload: re-reading the file must not
+    bring back one that failed five times in a row and start the failures over.
+    """
+    return [s for s in dict.fromkeys(preset + extra) if s not in retired]
 
 
 def main() -> None:
@@ -68,10 +73,14 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dotenv()
-    watch = _load_watchlist(args.watchlist)
+    watch, why = _read_settings(args.watchlist)
+    if watch is None:
+        sys.stderr.write(f"{args.watchlist}: {why}\n")
+        sys.exit(2)
+    loaded_mtime = os.path.getmtime(args.watchlist)
     preset_symbols = [Config.from_yaml(p).symbol for p in expand_paths(args.configs)]
-    # Preserve insertion order, drop dupes
-    symbols = list(dict.fromkeys(preset_symbols + watch["extra_symbols"]))
+    retired: set[str] = set()
+    symbols = _symbol_list(preset_symbols, watch["extra_symbols"], retired)
     if not symbols:
         sys.stderr.write("no symbols to watch (empty extra_symbols and no configs)\n")
         sys.exit(2)
@@ -133,6 +142,37 @@ def main() -> None:
     no_daily: set[str] = set()
     with connect(creds):
         while True:
+            # Pick up edits - from the settings app or by hand - without a
+            # restart. The file is re-read only when its mtime moves, and a
+            # change that fails validation is refused with the previous
+            # settings kept, so a half-typed edit cannot stop the alerts.
+            try:
+                mtime = os.path.getmtime(args.watchlist)
+            except OSError:
+                mtime = loaded_mtime
+            if mtime != loaded_mtime:
+                loaded_mtime = mtime
+                new, why = _read_settings(args.watchlist)
+                if new is None:
+                    log.warning(
+                        "alerts: %s changed but was refused (%s); "
+                        "keeping the previous settings", args.watchlist, why,
+                    )
+                else:
+                    changed = {k: (watch.get(k), v) for k, v in new.items()
+                               if watch.get(k) != v}
+                    watch = new
+                    symbols = _symbol_list(
+                        preset_symbols, watch["extra_symbols"], retired
+                    )
+                    n_bars = watch["window_minutes"] + 2
+                    n_days = watch["streak_days"] + 2
+                    if changed:
+                        log.info(
+                            "alerts: settings reloaded - %s",
+                            ", ".join(f"{k} {a} -> {b}"
+                                      for k, (a, b) in changed.items()),
+                        )
             for sym in list(symbols):
                 # The two checks are independent: a symbol can be quiet
                 # intraday and still be two days into a run, so neither may
@@ -163,6 +203,7 @@ def main() -> None:
                         log.warning("alerts: poll failed for %s: %s", sym, exc)
                     if n >= MAX_FAILS:
                         symbols.remove(sym)
+                        retired.add(sym)
                         log.warning(
                             "alerts: dropping %s after %d consecutive failures "
                             "(not tradable/visible on account %s?)",

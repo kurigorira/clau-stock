@@ -1,5 +1,10 @@
 # Price-change alert watchlist.
 #
+# Easiest to edit with alert_settings.bat (a settings page in the browser).
+# Hand edits work too. Either way the running alerts re-read this file on
+# their next poll - no restart - and refuse a change that fails the same
+# checks the settings page applies, keeping the previous settings.
+#
 # scripts/run_alerts.py polls each symbol on M1 bars every poll_seconds and
 # emails NOTIFY_TO when the last `window_minutes` close-to-close move exceeds
 # ±threshold_pct. Each symbol is throttled to one email per throttle_sec.
@@ -13,7 +18,7 @@
 threshold_pct: 2.0           # |change| >= this -> email
 window_minutes: 10           # close vs close N minutes ago
 poll_seconds: 30             # how often to refresh M1 bars per symbol
-throttle_sec: 1800           # 30-minute cooldown per symbol
+throttle_sec: 1800           # cooldown per symbol, in seconds
 
 # Multi-day streak alert, separate from the intraday one above and checked on
 # DAILY bars. Fires when `streak_days` consecutive daily closes EACH move at

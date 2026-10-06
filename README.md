@@ -919,6 +919,28 @@ add anything else to `extra_symbols:` in `watchlist.yaml`. `start.bat`
 launches the alerts process automatically on account 1's MT5 terminal.
 Log: `logs/alerts1.log`. Email subject: `[clau-stock alert] XAUUSD +2.34% in 10min`.
 
+#### Changing the settings: `alert_settings.bat`
+
+Double-click `alert_settings.bat` (or `python scripts/alert_settings.py`) and
+a settings page opens in the browser: thresholds, windows, the re-alert
+cooldown, the streak rule, extra symbols, and a **test mail** button that
+says plainly whether Gmail is configured. Each section shows the rule in one
+sentence as you type ("10分で±2%以上動いたら通知…").
+
+- **No restart.** The alert loop re-reads `watchlist.yaml` whenever it
+  changes and logs `settings reloaded`. The page watches that log after a
+  save and reports when the change was actually picked up — or that the
+  alerts are not running — instead of assuming.
+- **Comments survive.** Values are replaced in place; the file is re-read
+  and checked before it replaces the original, and the previous version is
+  kept as `watchlist.yaml.bak`.
+- **One set of rules.** The page and the alert loop validate with the same
+  code (`gold_trader/watchlist.py`). A hand edit the page would refuse — a
+  0-second poll, half a day — is refused by the loop too, which keeps
+  running on its previous settings and says so in the log.
+- **Local only.** The server binds to 127.0.0.1, rejects other Host
+  headers, and requires a per-launch token on every write.
+
 #### Multi-day streaks
 
 The same loop also watches **daily** bars and emails when a symbol closes

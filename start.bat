@@ -115,6 +115,7 @@ echo [start.bat] bots running: account 2 (macd+stoch), account 4 (bollrci)
 echo [start.bat] account 1 has NO bot - it is buy and hold:
 echo [start.bat]   scripts\buy_and_hold.py --account 1 config\us_fleet\*.yaml
 echo [start.bat] launched alerts (watchlist.yaml extras + the account-1 fleet)
+echo [start.bat] change alert settings with alert_settings.bat (applies live, no restart)
 echo Logs: logs\live2.log logs\live4.log logs\alerts1.log
 echo.
 pause
