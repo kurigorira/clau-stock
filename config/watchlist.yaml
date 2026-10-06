@@ -15,6 +15,21 @@ window_minutes: 10           # close vs close N minutes ago
 poll_seconds: 30             # how often to refresh M1 bars per symbol
 throttle_sec: 1800           # 30-minute cooldown per symbol
 
+# Multi-day streak alert, separate from the intraday one above and checked on
+# DAILY bars. Fires when `streak_days` consecutive daily closes EACH move at
+# least `streak_threshold_pct`.
+#
+# streak_same_direction: true means the moves must all be the same way, so
+# this reports a run (two +5% days is +10.25%) and stays quiet on a symbol
+# that went +5% then -5%, which is volatility and nets out near zero. Set it
+# to false to be told about both.
+#
+# Not throttled on a clock: a daily condition stays true until the next bar
+# closes, so it fires once per symbol per completed daily bar instead.
+streak_threshold_pct: 5.0    # each day must move at least this
+streak_days: 2               # this many consecutive days
+streak_same_direction: true  # all the same way, or any 5% day counts
+
 # Symbols to monitor IN ADDITION to the 13 trading presets.
 # Use whatever name your broker exposes (check MT5 Market Watch). Leave the
 # list empty to only watch the 13 trading presets.

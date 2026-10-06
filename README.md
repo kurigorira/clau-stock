@@ -919,6 +919,28 @@ add anything else to `extra_symbols:` in `watchlist.yaml`. `start.bat`
 launches the alerts process automatically on account 1's MT5 terminal.
 Log: `logs/alerts1.log`. Email subject: `[clau-stock alert] XAUUSD +2.34% in 10min`.
 
+#### Multi-day streaks
+
+The same loop also watches **daily** bars and emails when a symbol closes
+`streak_days` days in a row each moving at least `streak_threshold_pct` —
+by default **2 consecutive days of 5%**.
+
+- `streak_same_direction: true` (the default) requires the moves to be the
+  same way, so this reports a run and stays quiet on a symbol that went +5%
+  then −5%. That is volatility, nets out near zero, and would be noise. Set
+  it to `false` to hear about both.
+- The total is **compounded, not summed**: two +5% days is +10.25%.
+- Close-to-close, so an overnight gap counts — it is part of the day's move
+  for anyone holding through it.
+- Not throttled on a clock. A daily condition stays true until the next bar
+  closes, so a cooldown would re-send it all day; it fires once per symbol
+  per completed daily bar instead.
+
+The two checks are independent in both directions: a symbol can be quiet
+intraday and two days into a run, and a symbol the broker serves on M1 but
+not on D1 keeps its intraday alert and only loses the streak check.
+Email subject: `[clau-stock streak] NVIDIA 2 days up, +11.40%`.
+
 ### Stop / exit
 - Initial stop: `ATR(14) * 2` from entry (`risk.atr_stop_mult`).
 - Exit: 10-bar reverse Donchian.

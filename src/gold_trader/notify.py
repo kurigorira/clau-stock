@@ -186,6 +186,49 @@ def send_alert_mail(
     return sent
 
 
+def send_streak_mail(
+    symbol: str,
+    changes: list[float],
+    total_pct: float,
+    current_price: float,
+    start_price: float,
+    threshold_pct: float,
+    log: logging.Logger,
+) -> bool:
+    """Multi-day streak alert. Returns True iff a message was sent.
+
+    Deliberately NOT throttled on a timer, unlike the intraday alert. A daily
+    condition stays true all day, so a clock-based throttle would re-send it
+    every cooldown until the next bar closed. The caller fires this once per
+    completed daily bar instead, which is the natural rate for the signal.
+    """
+    days = len(changes)
+    sign = "+" if total_pct >= 0 else ""
+    direction = "up" if total_pct >= 0 else "down"
+    subject = (
+        f"[clau-stock streak] {symbol} {days} days {direction}, "
+        f"{sign}{total_pct:.2f}%"
+    )
+    daily = "\n".join(
+        f"  day {i + 1}      : {c:+.2f}%" for i, c in enumerate(changes)
+    )
+    body = (
+        f"symbol      : {symbol}\n"
+        f"streak      : {days} consecutive daily closes moving >= "
+        f"{threshold_pct}%\n"
+        f"{daily}\n"
+        f"total       : {sign}{total_pct:.2f}% (compounded, not the sum)\n"
+        f"current     : {current_price}\n"
+        f"before      : {start_price}\n"
+    )
+    sent = _send_via_gmail(subject, body, log)
+    if sent:
+        log.info(
+            "streak: mail sent for %s (%d days, %+.2f%%)", symbol, days, total_pct
+        )
+    return sent
+
+
 def reset_throttle() -> None:
     """Test helper: clear both per-key last-sent caches."""
     _last_signal_sent.clear()
