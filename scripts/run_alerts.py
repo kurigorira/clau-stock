@@ -73,6 +73,12 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dotenv()
+    try:
+        if watchlist.ensure(args.watchlist):
+            print(f"created {args.watchlist} from its template")
+    except watchlist.SettingsError as exc:
+        sys.stderr.write(f"{exc}\n")
+        sys.exit(2)
     watch, why = _read_settings(args.watchlist)
     if watch is None:
         sys.stderr.write(f"{args.watchlist}: {why}\n")

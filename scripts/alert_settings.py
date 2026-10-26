@@ -268,8 +268,11 @@ def main() -> None:
     logging.basicConfig(level="INFO", format="%(asctime)s | %(message)s")
 
     path = Path(args.watchlist)
-    if not path.is_file():
-        sys.stderr.write(f"{path} が見つかりません\n")
+    try:
+        if watchlist.ensure(path):
+            print(f"{path.name} をテンプレートから作成しました")
+    except watchlist.SettingsError as exc:
+        sys.stderr.write(f"{exc}\n")
         sys.exit(2)
 
     try:

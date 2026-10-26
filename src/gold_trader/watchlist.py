@@ -20,7 +20,7 @@ from typing import Any
 
 import yaml
 
-__all__ = ["FIELDS", "Field", "load", "validate", "save", "SettingsError"]
+__all__ = ["FIELDS", "Field", "ensure", "load", "validate", "save", "SettingsError"]
 
 
 @dataclass(frozen=True)
@@ -52,6 +52,31 @@ MAX_EXTRA_SYMBOLS = 200
 
 class SettingsError(Exception):
     """The file could not be read, or a write did not come out as intended."""
+
+
+def template_for(path: str | Path) -> Path:
+    """config/watchlist.yaml -> config/watchlist.example.yaml."""
+    path = Path(path)
+    return path.with_name(f"{path.stem}.example{path.suffix}")
+
+
+def ensure(path: str | Path) -> bool:
+    """Create the settings file from its template if it does not exist yet.
+
+    The live file is deliberately not tracked by git - see .gitignore - so a
+    fresh clone has only the template. Returns True if it created the file.
+    An existing file is never touched: it is somebody's settings.
+    """
+    path = Path(path)
+    if path.exists():
+        return False
+    template = template_for(path)
+    if not template.is_file():
+        raise SettingsError(
+            f"{path} does not exist and there is no {template.name} to create it from"
+        )
+    shutil.copy2(template, path)
+    return True
 
 
 def load(path: str | Path) -> dict[str, Any]:

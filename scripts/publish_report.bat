@@ -42,13 +42,25 @@ if not errorlevel 1 goto :needs_hands
 
 REM ==== 1. Catch up with the remote ====
 REM The page can also be edited from GitHub's web UI, which leaves this clone
-REM behind; committing on top of that could only fail to push. Rebase while
-REM the tree is still clean, so there is nothing to conflict with.
+REM behind; committing on top of that could only fail to push.
+REM
+REM --autostash: a plain `git pull --rebase` refuses outright when ANY tracked
+REM file has local edits, and that stopped publishing for three weeks once -
+REM the alert settings were a tracked file the settings app wrote to. Those
+REM are untracked now, but anything else edited by hand would do the same, so
+REM local edits are set aside for the pull and put back after it. Which files
+REM they were goes in the log first, so a failure names its cause.
 for /f "delims=" %%b in ('git rev-parse --abbrev-ref HEAD') do set "BRANCH=%%b"
 echo [publish_report] branch: %BRANCH% >> logs\publish_report.log
-git pull --rebase >> logs\publish_report.log 2>&1
+git diff --quiet
+if errorlevel 1 (
+    echo [publish_report] local edits to tracked files, set aside for the pull: >> logs\publish_report.log
+    git diff --name-only >> logs\publish_report.log 2>&1
+)
+git pull --rebase --autostash >> logs\publish_report.log 2>&1
 if errorlevel 1 (
     echo [publish_report] git pull --rebase failed - publishing nothing >> logs\publish_report.log
+    echo [publish_report] see the git output above for the file in the way >> logs\publish_report.log
     exit /b 1
 )
 

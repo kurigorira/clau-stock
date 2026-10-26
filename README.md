@@ -671,6 +671,25 @@ Nothing about the page is monthly except the buckets: the headline, the
 per-strategy totals and the automatic checks all recompute, so a daily run
 shows the current month filling in.
 
+#### If the daily page stops updating
+
+The last lines of the log say why:
+
+```powershell
+Get-Content logs\publish_report.log -Tail 20
+```
+
+- **No new lines at all** — the task did not run: the PC was off or asleep at
+  06:30, or the task is disabled (`schtasks /Query /TN "clau-stock publish
+  report" /V /FO LIST`).
+- **`cannot pull with rebase: You have unstaged changes`** — a tracked file has
+  local edits. It stopped publishing from 2026-10-06 for three weeks: the
+  alert settings were a tracked file, and the settings app wrote to it. They
+  are untracked now (see *Changing the settings*) and the script pulls with
+  `--autostash`, logging which files it set aside, so this should not recur.
+- **`report generation failed`** — usually an MT5 terminal is closed or not
+  logged in.
+
 `--markdown [PATH]` writes the same figures as a Markdown report meant to be
 committed (`reports/` is tracked; `logs/` is not). Account numbers are masked
 to their last three digits there — a login plus the server name identifies the
@@ -908,7 +927,13 @@ trading. Throttled at one email per (symbol, side) per 60 seconds.
 watched symbol moves more than `threshold_pct` over the last
 `window_minutes` of M1 bars. It does not trade.
 
-Defaults (`config/watchlist.yaml`):
+Settings live in `config/watchlist.yaml`, which is **yours and not tracked** —
+it is created from the tracked template `config/watchlist.example.yaml`
+the first time the alerts or the settings app start. A tracked file that
+is meant to be edited locally makes every `git pull --rebase` refuse to
+run, which is exactly how the daily report publishing once stopped.
+
+Defaults (`config/watchlist.example.yaml`):
 - `threshold_pct: 2.0` - fires at |Δ| >= 2%
 - `window_minutes: 10` - close vs close 10 M1 bars ago
 - `poll_seconds: 30` - refresh interval per symbol

@@ -1,7 +1,13 @@
-# Price-change alert watchlist.
+# Price-change alert watchlist - TEMPLATE.
+#
+# This file is the template git tracks. Your own settings live in
+# config/watchlist.yaml, which is created from this one the first time the
+# alerts or the settings app start, and is NOT tracked: a tracked file you are
+# meant to edit makes every `git pull` refuse to run, and the daily report
+# publishing stops with it. Edit watchlist.yaml, not this.
 #
 # Easiest to edit with alert_settings.bat (a settings page in the browser).
-# Hand edits work too. Either way the running alerts re-read this file on
+# Hand edits work too. Either way the running alerts re-read the file on
 # their next poll - no restart - and refuse a change that fails the same
 # checks the settings page applies, keeping the previous settings.
 #

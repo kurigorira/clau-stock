@@ -9,7 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from gold_trader import watchlist as w  # noqa: E402
 
-REAL = Path(__file__).resolve().parents[1] / "config" / "watchlist.yaml"
+REPO = Path(__file__).resolve().parents[1]
+REAL = REPO / "config" / "watchlist.example.yaml"   # the tracked template
 
 
 @pytest.fixture
@@ -185,3 +186,42 @@ def test_a_reload_does_not_resurrect_a_retired_symbol():
     ra = _run_alerts()
     got = ra._symbol_list(["AAPL", "MSFT"], ["GOOGL", "AAPL"], retired={"MSFT"})
     assert got == ["AAPL", "GOOGL"]
+
+
+# --- the live file is the user's, not git's ----------------------------------
+
+def test_ensure_creates_the_settings_from_the_template(tmp_path):
+    (tmp_path / "watchlist.example.yaml").write_text(
+        REAL.read_text(encoding="utf-8"), encoding="utf-8")
+    live = tmp_path / "watchlist.yaml"
+    assert w.ensure(live) is True
+    assert live.read_text(encoding="utf-8") == REAL.read_text(encoding="utf-8")
+
+
+def test_ensure_never_touches_existing_settings(tmp_path):
+    (tmp_path / "watchlist.example.yaml").write_text("threshold_pct: 2.0\n", encoding="utf-8")
+    live = tmp_path / "watchlist.yaml"
+    live.write_text("threshold_pct: 3.0\n", encoding="utf-8")
+    assert w.ensure(live) is False
+    assert w.load(live)["threshold_pct"] == 3.0
+
+
+def test_ensure_without_a_template_says_so(tmp_path):
+    with pytest.raises(w.SettingsError):
+        w.ensure(tmp_path / "watchlist.yaml")
+
+
+def _git(*args):
+    import subprocess
+    return subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True)
+
+
+def test_the_live_settings_are_not_tracked_by_git():
+    # A tracked file the settings app writes to made every `git pull --rebase`
+    # refuse to run - and the daily report publishing stopped for three weeks
+    # without anyone being told. This pins the decision that fixed it.
+    if _git("rev-parse", "--git-dir").returncode != 0:
+        pytest.skip("not a git checkout")
+    assert _git("ls-files", "config/watchlist.yaml").stdout.strip() == ""
+    assert _git("check-ignore", "-q", "config/watchlist.yaml").returncode == 0
+    assert _git("ls-files", "config/watchlist.example.yaml").stdout.strip() != ""
