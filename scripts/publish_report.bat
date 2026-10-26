@@ -11,6 +11,16 @@ REM   schtasks /Create /TN "clau-stock publish report" ^
 REM     /TR "C:\Users\user\clau-stock\scripts\publish_report.bat" ^
 REM     /SC DAILY /ST 06:30 /IT /F
 REM
+REM And a retry task, so a day is not lost because the PC was asleep or a
+REM terminal was closed at 06:30. With the "retry" argument a run does nothing
+REM once today's report is already published, so it never commits twice:
+REM   schtasks /Create /TN "clau-stock publish report retry" ^
+REM     /TR "C:\Users\user\clau-stock\scripts\publish_report.bat retry" ^
+REM     /SC DAILY /ST 07:00 /RI 60 /DU 15:00 /IT /F
+REM If nothing has been published by noon, one email per day says so
+REM (scripts\publish_guard.py) - a stalled publisher once went unnoticed for
+REM three weeks.
+REM
 REM /IT matters: the task must run in the logged-on session. The MT5
 REM terminals only exist there, and git push needs that user's credentials.
 REM It pushes the CURRENT branch, which must be the one GitHub Pages serves
@@ -23,13 +33,20 @@ REM "not reported" rather than failing the whole run.
 cd /d "%~dp0.."
 if not exist "logs" mkdir logs
 
-echo [publish_report] started %date% %time% >> logs\publish_report.log
-
 if not exist ".venv\Scripts\activate.bat" (
-    echo [publish_report] .venv not found >> logs\publish_report.log
+    echo [publish_report] %date% %time% .venv not found >> logs\publish_report.log
     exit /b 1
 )
 call .venv\Scripts\activate.bat
+
+REM An hourly retry after a successful publish is a no-op, and says nothing:
+REM fifteen "already done" lines a day would bury the line that matters.
+if /i "%~1"=="retry" (
+    python scripts\publish_guard.py is-done
+    if not errorlevel 1 exit /b 0
+)
+
+echo [publish_report] started %date% %time% %~1 >> logs\publish_report.log
 
 REM ==== 0. Refuse to run on a repository mid-operation ====
 REM An unfinished merge or rebase makes every later step fail in a way that
@@ -61,6 +78,7 @@ git pull --rebase --autostash >> logs\publish_report.log 2>&1
 if errorlevel 1 (
     echo [publish_report] git pull --rebase failed - publishing nothing >> logs\publish_report.log
     echo [publish_report] see the git output above for the file in the way >> logs\publish_report.log
+    call :fail git pull failed
     exit /b 1
 )
 
@@ -68,6 +86,7 @@ REM ==== 2. Regenerate both artefacts from live account history ====
 python -u scripts\monthly_report.py --markdown --html >> logs\publish_report.log 2>&1
 if errorlevel 1 (
     echo [publish_report] report generation failed, nothing published >> logs\publish_report.log
+    call :fail report generation failed - is every MT5 terminal running and logged in?
     exit /b 1
 )
 
@@ -75,6 +94,7 @@ REM ==== 3. Publish only when something changed ====
 git diff --quiet -- reports/monthly.md docs/index.html
 if not errorlevel 1 (
     echo [publish_report] no change, nothing to commit >> logs\publish_report.log
+    python scripts\publish_guard.py done
     echo [publish_report] finished %date% %time% >> logs\publish_report.log
     exit /b 0
 )
@@ -85,6 +105,7 @@ git add reports/monthly.md docs/index.html >> logs\publish_report.log 2>&1
 git commit -m "monthly report %date%" >> logs\publish_report.log 2>&1
 if errorlevel 1 (
     echo [publish_report] commit failed >> logs\publish_report.log
+    call :fail git commit failed
     exit /b 1
 )
 
@@ -100,6 +121,7 @@ goto push
 
 :pushed
 echo [publish_report] published >> logs\publish_report.log
+python scripts\publish_guard.py done
 echo [publish_report] finished %date% %time% >> logs\publish_report.log
 exit /b 0
 
@@ -117,6 +139,7 @@ if "%PARENT%"=="%BEFORE%" (
     echo [publish_report] push failed after %TRIES% attempts and HEAD moved >> logs\publish_report.log
     echo [publish_report] unexpectedly - left alone for a human to look at >> logs\publish_report.log
 )
+call :fail git push failed after %TRIES% attempts
 exit /b 1
 
 :needs_hands
@@ -127,4 +150,10 @@ echo [publish_report]   git fetch origin >> logs\publish_report.log
 echo [publish_report]   git log --oneline @{u}..HEAD >> logs\publish_report.log
 echo [publish_report] If only "monthly report" commits are listed they are >> logs\publish_report.log
 echo [publish_report] regenerated output, so git reset --hard @{u} is safe. >> logs\publish_report.log
+call :fail unfinished merge/rebase or unresolved conflicts in the repository
 exit /b 1
+
+:fail
+REM Mails only after noon, once per day, and only if nothing published today.
+python scripts\publish_guard.py fail %* >> logs\publish_report.log 2>&1
+exit /b 0

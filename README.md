@@ -654,6 +654,25 @@ schtasks /Create /TN "clau-stock publish report" ^
   /SC DAILY /ST 06:30 /IT /F
 ```
 
+Register the **retry** task too. It runs hourly from 07:00 to 22:00 and does
+nothing at all once today's report is out, so a day is not lost because the
+PC was asleep or a terminal was closed at 06:30 — and it never commits the
+same day twice:
+
+```bat
+schtasks /Create /TN "clau-stock publish report retry" ^
+  /TR "C:\Users\user\clau-stock\scripts\publish_report.bat retry" ^
+  /SC DAILY /ST 07:00 /RI 60 /DU 15:00 /IT /F
+```
+
+If nothing has been published by noon, **one email per day** says so, with
+the latest failure and the tail of the log (`scripts/publish_guard.py`, via
+the same Gmail settings as the alerts — the settings app's test-mail button
+checks them). A morning failure is not mailed: the 06:30 run can miss while
+a terminal is still starting, and the next retry usually succeeds. The
+publisher once failed silently every day for three weeks; this is so the
+next stall is noticed the same day.
+
 `/IT` is not optional: without it the task runs outside the logged-on
 session, where the MT5 terminals do not exist and `git push` cannot reach
 the user's credential store. `/F` just replaces an existing registration.
