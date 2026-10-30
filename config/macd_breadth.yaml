@@ -1,0 +1,27 @@
+# MACD cross + US-stock market-breadth regime gate — the OOS-validated recipe.
+#
+# Breadth = net new 100-bar highs across the broker's US stocks (auto-
+# discovered at runtime, venue duplicates deduped). Longs need net > 1,
+# shorts net < -1. min_net=1 was selected on the in-sample 60% by PnL and
+# held up out-of-sample: test win 32% -> 39%, PnL +21 -> +32 (see
+# scripts/oos_breadth.py). Only meaningful on US-stock symbols — set
+# `symbol` per stock you run. NOT launched by default.
+symbol: AAPL
+timeframe: H1
+strategy: macd
+
+macd:
+  fast: 12
+  slow: 26
+  signal: 9
+  use_h4_filter: false
+
+breadth:
+  use: true
+  lookback: 100
+  min_net: 1
+
+risk:
+  per_trade_pct: 0.3
+  atr_stop_mult: 2.0
+  max_positions: 1

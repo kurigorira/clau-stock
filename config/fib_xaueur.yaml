@@ -1,0 +1,27 @@
+# XAUEUR donchian preset — passed the spread-aware screener gate
+# (train PF 1.45/n31, test PF 1.58/n16, spread ~115pt at scan time).
+# Inherits defaults from src/gold_trader/config.py.
+symbol: XAUEUR
+timeframe: H1
+strategy: donchian
+
+risk:
+  per_trade_pct: 0.3
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  atr_pct_min: 0.001
+  atr_pct_max: 0.05
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260760
+  deviation_points: 20
+  comment: "fib_xaueur"

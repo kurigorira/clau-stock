@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+venv/
+*.log
+logs/
+data/*.csv
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+.idea/
+.vscode/
+
+# Your own alert settings. Created from config/watchlist.example.yaml on first
+# run and edited by alert_settings.bat. Not tracked: a tracked file that is
+# meant to be edited locally makes every `git pull --rebase` refuse to run,
+# which is how the daily report publishing stopped.
+config/watchlist.yaml
+config/watchlist.yaml.bak
+config/watchlist.yaml.tmp

@@ -1,0 +1,11 @@
+# NVIDIA stock CFD. Inherits defaults from src/gold_trader/config.py.
+symbol: NVIDIA
+timeframe: H1
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260513
+  deviation_points: 30
+  comment: "nvda_breakout"

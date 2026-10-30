@@ -1,0 +1,11 @@
+# Gold (XAUUSD). Inherits defaults from src/gold_trader/config.py.
+symbol: XAUUSD
+timeframe: H1
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260518
+  deviation_points: 20
+  comment: "xauusd_breakout"
