@@ -1,6 +1,6 @@
 # Monthly operating statistics
 
-Generated 2026-10-31 06:30 JST from live MT5 account history (`scripts/monthly_report.py --markdown`).
+Generated 2026-11-01 06:30 JST from live MT5 account history (`scripts/monthly_report.py --markdown`).
 
 One closed **position** counts as one trade (partial closes collapse) and its PnL includes commission and swap on every deal of the position. Months are JST calendar months; a month with no trades is shown as a zero row. Deposits and withdrawals are reported separately from trading PnL, so a funded month cannot read as a winning one. All amounts in JPY.
 
@@ -8,9 +8,9 @@ One closed **position** counts as one trade (partial closes collapse) and its Pn
 
 | account | months | trades | win % | PF | net PnL |
 |---|---:|---:|---:|---:|---:|
-| 1 (***431) | 5 | 211 | 26.1 | 0.73 | -268,744 |
-| 2 (***128) | 6 | 467 | 23.3 | 0.77 | -229,025 |
-| 3 (***497) | 5 | 80 | 43.8 | 1.06 | +6,833 |
+| 1 (***431) | 4 | 184 | 26.1 | 0.78 | -141,770 |
+| 2 (***128) | 5 | 453 | 23.2 | 0.79 | -170,036 |
+| 3 (***497) | 4 | 77 | 44.2 | 1.18 | +18,121 |
 | 4 (***565) | 3 | 250 | 43.6 | 0.74 | -7,832 |
 | 5 (***010) | 3 | 21 | 23.8 | 0.09 | -120,068 |
 
@@ -22,9 +22,9 @@ These describe **the positions open at this snapshot**. For a book that is genui
 
 | account | notional | equity | leverage | financing/yr | as % of equity |
 |---|---:|---:|---:|---:|---:|
-| 1 | 627,901 | 726,827 | 0.9x | -37,953 | -5.2% |
-| 2 | 1,627,783 | 617,558 | 2.6x | -188,864 * | -30.6% * |
-| 4 | 121,638 | 97,549 | 1.2x | -12,225 * | -12.5% * |
+| 1 | 627,901 | 726,827 | 0.9x | -36,980 | -5.1% |
+| 2 | 1,627,783 | 617,558 | 2.6x | -128,280 * | -20.8% * |
+| 4 | 121,638 | 97,549 | 1.2x | -8,495 * | -8.7% * |
 
 \* **Provisional.** Swap is not charged evenly — the weekend is billed on a single night at triple rate — so the charge arrives in weekly lumps while the days it is divided by accrue daily. The reading swings across the week, by roughly ±29% at a week held and ±7% at a month, so these are worth reading as numbers near a month, not before.
 
@@ -32,19 +32,16 @@ These describe **the positions open at this snapshot**. For a book that is genui
 
 | month | trades | win % | PF | gross + | gross - | net | in/out | end balance |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2026-05 | 27 | 25.9 | 0.64 | +226,560 | -353,534 | -126,974 | +990,000 | 863,026 |
 | 2026-06 | 31 | 41.9 | 1.41 | +395,459 | -281,454 | +114,005 | 0 | 977,031 |
 | 2026-07 | 21 | 14.3 | 0.11 | +20,346 | -180,028 | -159,682 | 0 | 817,349 |
 | 2026-08 | 12 | 25.0 | 0.62 | +13,465 | -21,869 | -8,404 | 0 | 808,945 |
 | 2026-09 | 120 | 24.2 | 0.48 | +79,911 | -167,600 | -87,689 | 0 | 721,256 |
-| **total** | **211** | **26.1** | | | | **-268,744** | | **721,256** |
+| **total** | **184** | **26.1** | | | | **-141,770** | | **721,256** |
 
 By strategy:
 
 | month | strategy | net | trades |
 |---|---|---:|---:|
-| 2026-05 | ambiguous | -96,334 | 20 |
-| 2026-05 | donchian | -30,640 | 7 |
 | 2026-06 | ambiguous | +67,756 | 18 |
 | 2026-06 | donchian | +46,249 | 13 |
 | 2026-07 | ambiguous | -80,729 | 5 |
@@ -63,8 +60,8 @@ How trades ended:
 
 | exit | trades |
 |---|---:|
-| stop loss | 95 |
-| the strategy's own exit | 95 |
+| stop loss | 84 |
+| the strategy's own exit | 79 |
 | closed by hand | 19 |
 | take profit | 2 |
 
@@ -74,26 +71,23 @@ Open positions — **not** counted in the tables above, because nothing has been
 |---|---:|---:|---:|---:|---:|
 | buyhold | 89 | 52.40 | +5,571 | -3,950 | 627,901 |
 
-Financing: **-104/day** → **-37,953/yr**, **-6.0%/yr of notional**, measured over 89 position(s) held at least a day. A CFD pays this every night the position is held; a cash share or an ETF pays none of it.
+Financing: **-101/day** → **-36,980/yr**, **-5.9%/yr of notional**, measured over 89 position(s) held at least a day. A CFD pays this every night the position is held; a cash share or an ETF pays none of it.
 
 ## Account 2 (***128)
 
 | month | trades | win % | PF | gross + | gross - | net | in/out | end balance |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2026-05 | 14 | 28.6 | 0.67 | +122,356 | -181,345 | -58,989 | +800,000 | 741,011 |
 | 2026-06 | 20 | 40.0 | 1.71 | +399,529 | -233,301 | +166,228 | 0 | 907,239 |
 | 2026-07 | 16 | 25.0 | 0.12 | +10,837 | -90,700 | -79,863 | 0 | 827,376 |
 | 2026-08 | 24 | 12.5 | 0.16 | +6,643 | -41,720 | -35,077 | 0 | 792,299 |
 | 2026-09 | 138 | 29.7 | 0.56 | +89,577 | -159,688 | -70,111 | 0 | 722,188 |
 | 2026-10 | 255 | 19.2 | 0.45 | +121,483 | -272,696 | -151,213 | 0 | 570,975 |
-| **total** | **467** | **23.3** | | | | **-229,025** | | **570,975** |
+| **total** | **453** | **23.2** | | | | **-170,036** | | **570,975** |
 
 By strategy:
 
 | month | strategy | net | trades |
 |---|---|---:|---:|
-| 2026-05 | ambiguous | -37,973 | 5 |
-| 2026-05 | donchian | -21,016 | 9 |
 | 2026-06 | ambiguous | +116,616 | 13 |
 | 2026-06 | donchian | +49,612 | 7 |
 | 2026-07 | donchian | -76,118 | 12 |
@@ -111,8 +105,8 @@ How trades ended:
 
 | exit | trades |
 |---|---:|
-| the strategy's own exit | 245 |
-| stop loss | 214 |
+| the strategy's own exit | 239 |
+| stop loss | 206 |
 | closed by hand | 7 |
 | take profit | 1 |
 
@@ -122,26 +116,24 @@ Open positions — **not** counted in the tables above, because nothing has been
 |---|---:|---:|---:|---:|---:|
 | macd | 16 | 130.00 | +46,583 | -1,076 | 1,627,783 |
 
-Financing: **-517/day** → **-188,864/yr**, **-11.6%/yr of notional**, measured over 16 position(s) held at least a day. A CFD pays this every night the position is held; a cash share or an ETF pays none of it.
+Financing: **-351/day** → **-128,280/yr**, **-7.9%/yr of notional**, measured over 16 position(s) held at least a day. A CFD pays this every night the position is held; a cash share or an ETF pays none of it.
 
-**This rate is provisional** — roughly **±28%** at this age. The book is 7.1 day(s) old, and swap is not charged evenly: the weekend is billed on a single night at triple rate, so the charge arrives in weekly lumps while the days it is divided by accrue daily. The reading therefore swings across the week — jumping on the triple night, decaying every day after — with the swing shrinking as roughly 1/days. It is worth reading as a number near 28 days, not before.
+**This rate is provisional** — roughly **±25%** at this age. The book is 8.1 day(s) old, and swap is not charged evenly: the weekend is billed on a single night at triple rate, so the charge arrives in weekly lumps while the days it is divided by accrue daily. The reading therefore swings across the week — jumping on the triple night, decaying every day after — with the swing shrinking as roughly 1/days. It is worth reading as a number near 28 days, not before.
 
 ## Account 3 (***497)
 
 | month | trades | win % | PF | gross + | gross - | net | in/out | end balance |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2026-05 | 3 | 33.3 | 0.31 | +5,166 | -16,454 | -11,288 | +11,032 | 7,429 |
 | 2026-06 | 9 | 44.4 | 4.41 | +30,844 | -7,002 | +23,842 | +6,679 | 37,950 |
 | 2026-07 | 3 | 0.0 | 0.00 | 0 | -7,474 | -7,474 | -122 | 30,354 |
 | 2026-08 | 2 | 50.0 | 10.37 | +3,672 | -354 | +3,318 | -16,186 | 17,486 |
 | 2026-09 | 63 | 46.0 | 0.98 | +83,112 | -84,677 | -1,565 | -15,921 | 0 |
-| **total** | **80** | **43.8** | | | | **+6,833** | | **0** |
+| **total** | **77** | **44.2** | | | | **+18,121** | | **0** |
 
 By strategy:
 
 | month | strategy | net | trades |
 |---|---|---:|---:|
-| 2026-05 | manual | -11,288 | 3 |
 | 2026-06 | manual | +23,842 | 9 |
 | 2026-07 | manual | -7,474 | 3 |
 | 2026-08 | manual | +3,318 | 2 |
@@ -151,8 +143,8 @@ How trades ended:
 
 | exit | trades |
 |---|---:|
-| closed by hand | 74 |
-| stop loss | 6 |
+| closed by hand | 73 |
+| stop loss | 4 |
 
 ## Account 4 (***565)
 
@@ -184,9 +176,9 @@ Open positions — **not** counted in the tables above, because nothing has been
 |---|---:|---:|---:|---:|---:|
 | bollrci | 9 | 13.40 | +5,381 | -77 | 121,638 |
 
-Financing: **-33/day** → **-12,225/yr**, **-10.1%/yr of notional**, measured over 9 position(s) held at least a day. A CFD pays this every night the position is held; a cash share or an ETF pays none of it.
+Financing: **-23/day** → **-8,495/yr**, **-7.0%/yr of notional**, measured over 9 position(s) held at least a day. A CFD pays this every night the position is held; a cash share or an ETF pays none of it.
 
-**This rate is provisional** — roughly **±63%** at this age. The book is 3.2 day(s) old, and swap is not charged evenly: the weekend is billed on a single night at triple rate, so the charge arrives in weekly lumps while the days it is divided by accrue daily. The reading therefore swings across the week — jumping on the triple night, decaying every day after — with the swing shrinking as roughly 1/days. It is worth reading as a number near 28 days, not before.
+**This rate is provisional** — roughly **±48%** at this age. The book is 4.2 day(s) old, and swap is not charged evenly: the weekend is billed on a single night at triple rate, so the charge arrives in weekly lumps while the days it is divided by accrue daily. The reading therefore swings across the week — jumping on the triple night, decaying every day after — with the swing shrinking as roughly 1/days. It is worth reading as a number near 28 days, not before.
 
 ## Account 5 (***010)
 
