@@ -1,0 +1,26 @@
+# Strategy 6-2 from the reference book: moving average + deviation rate
+# (移動平均線+乖離率). Mean reversion: buy when price is stretched
+# threshold_atr_mult ATRs below the MA (only in an H4 uptrend), exit when the
+# MA is tagged. NOT launched — exploratory preset for oos_meanrev.py.
+symbol: AAPL
+timeframe: H1
+strategy: kairi
+
+kairi:
+  ma_length: 25
+  threshold_atr_mult: 2.0
+  use_h4_filter: true
+
+risk:
+  per_trade_pct: 0.25
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+session:
+  start_utc: "13:30"
+  end_utc: "21:00"
+  trade_days: ["Mon", "Tue", "Wed", "Thu", "Fri"]
+
+execution:
+  magic_number: 20261000
+  comment: kairi
