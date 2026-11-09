@@ -418,7 +418,7 @@ PAGE = r"""<!doctype html>
     <div class="row" data-key="throttle_sec">
       <label for="throttle_min">同じ銘柄の再通知</label>
       <div class="unit"><input type="number" id="throttle_min" step="1" min="0" max="1440"><span>分あける</span></div>
-      <div class="help">動きが続いても、同じ銘柄のメールはこの間隔に1通までです。0 で毎回。</div>
+      <div class="help">1回の値動きにつき通知は1通です。それとは別に、同じ銘柄の通知をこの間隔より短くは送りません（0 で制限なし）。</div>
       <div class="err"></div>
     </div>
   </section>

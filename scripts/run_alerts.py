@@ -142,6 +142,7 @@ def main() -> None:
     # throttle would re-send it all day. Key on the bar instead: one mail per
     # symbol per completed daily bar, which is the rate the signal changes at.
     streak_sent: dict[str, object] = {}
+    gate = alerts.MoveGate()
     # Separate from `fails`: a symbol the broker serves on M1 but not D1 keeps
     # its intraday alert and only loses the streak check.
     d1_fails: dict[str, int] = {}
@@ -190,8 +191,14 @@ def main() -> None:
                     fails.pop(sym, None)
                     closed = raw.iloc[:-1]  # drop the still-forming M1 bar
                     change = alerts.evaluate_change(sym, closed, watch["window_minutes"])
-                    if change is not None and alerts.should_alert(
-                        change.change_pct, watch["threshold_pct"]
+                    # One mail per move: only on a new bar, and only when the
+                    # move crosses the threshold - not again while it stays
+                    # over it, and not for the same bars after the close.
+                    if gate.is_news(
+                        sym,
+                        closed.index[-1] if len(closed) else None,
+                        None if change is None else change.change_pct,
+                        watch["threshold_pct"],
                     ):
                         notify.send_alert_mail(
                             symbol=change.symbol,

@@ -963,6 +963,17 @@ add anything else to `extra_symbols:` in `watchlist.yaml`. `start.bat`
 launches the alerts process automatically on account 1's MT5 terminal.
 Log: `logs/alerts1.log`. Email subject: `[clau-stock alert] XAUUSD +2.34% in 10min`.
 
+#### One mail per move
+
+An intraday alert fires **once per move**. It is judged only when a symbol
+has a new closed bar, so the same bars are never mailed twice — after the
+close no new bar arrives, and the frozen last window used to be re-sent
+every time the cooldown ran out (seventeen identical `BKNG +3.30% in 5min`
+mails in one night). And it is edge-triggered: a move that stays over the
+threshold as the window slides is one move; the next mail needs the change
+to fall back under the threshold first, or to reverse. `throttle_sec`
+remains as an extra cap on top.
+
 #### Changing the settings: `alert_settings.bat`
 
 Double-click `alert_settings.bat` (or `python scripts/alert_settings.py`) and

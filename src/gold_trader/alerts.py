@@ -123,3 +123,44 @@ def evaluate_streak(
         current_price=closes[-1],
         start_price=closes[-1 - days],
     )
+
+
+class MoveGate:
+    """Decides whether an intraday move is news: once per move, never twice.
+
+    Two things used to make one move into a stream of identical mails:
+
+    - The same bars were re-read every poll. After the close no new M1 bar
+      arrives, so the last window - say +3.30% in 5 minutes - stays exactly
+      where it was, and every time the cooldown ran out it was mailed again,
+      all night. Here a symbol is judged only when it has a NEW closed bar;
+      the same bars a second time are not new information.
+    - A move that persists keeps satisfying the threshold on bar after bar,
+      because the window slides along with it. So the gate is edge-triggered:
+      it fires when a direction crosses the threshold, then stays quiet in
+      that direction until a new bar shows the move back under it. A reversal
+      the other way is a new move and fires on its own.
+
+    State is per process. A restart may report a move that is still in
+    progress once - one mail, not a stream.
+    """
+
+    def __init__(self) -> None:
+        self._last_bar: dict[str, object] = {}
+        self._armed: dict[tuple[str, int], bool] = {}
+
+    def is_news(self, symbol: str, bar, change_pct: float | None,
+                threshold_pct: float) -> bool:
+        if bar is not None and self._last_bar.get(symbol) == bar:
+            return False                      # nothing new since last look
+        self._last_bar[symbol] = bar
+        if change_pct is None or abs(change_pct) < threshold_pct:
+            # back under the threshold: both directions can fire again
+            self._armed[(symbol, 1)] = True
+            self._armed[(symbol, -1)] = True
+            return False
+        side = 1 if change_pct > 0 else -1
+        if self._armed.get((symbol, side), True):
+            self._armed[(symbol, side)] = False
+            return True
+        return False
