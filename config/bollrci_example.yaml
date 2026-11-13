@@ -1,0 +1,30 @@
+# Strategy 6-6 from the reference book: Bollinger Bands + RCI
+# (ボリンジャーバンド+RCI), lifted from its day-trade framing onto H1 because
+# our measured costs (2-8bp/side) make M5/M15 scalps uneconomic. Mean
+# reversion: buy on a lower-band poke confirmed by RCI <= -threshold (only in
+# an H4 uptrend), exit at the middle band. NOT launched — exploratory preset
+# for oos_meanrev.py.
+symbol: AAPL
+timeframe: H1
+strategy: bollrci
+
+bollrci:
+  bb_length: 20
+  bb_dev: 2.0
+  rci_length: 9
+  rci_threshold: 80
+  use_h4_filter: true
+
+risk:
+  per_trade_pct: 0.25
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+session:
+  start_utc: "13:30"
+  end_utc: "21:00"
+  trade_days: ["Mon", "Tue", "Wed", "Thu", "Fri"]
+
+execution:
+  magic_number: 20261001
+  comment: bollrci
