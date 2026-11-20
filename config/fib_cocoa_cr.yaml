@@ -1,0 +1,26 @@
+# Cocoa-Cr donchian preset — passed the 12-month spread-aware review
+# (train PF 3.21/n22, test PF 1.66/n16). Inherits defaults from config.py.
+symbol: Cocoa-Cr
+timeframe: H1
+strategy: donchian
+
+risk:
+  per_trade_pct: 0.3
+  atr_stop_mult: 2.0
+  max_positions: 1
+
+filters:
+  atr_pct_min: 0.001
+  atr_pct_max: 0.05
+
+daily_guard:
+  max_consecutive_losses: 2
+  max_loss_pct: 2.0
+
+session:
+  trade_days: [Mon, Tue, Wed, Thu, Fri]
+
+execution:
+  magic_number: 20260769
+  deviation_points: 20
+  comment: "fib_cocoa_cr"
